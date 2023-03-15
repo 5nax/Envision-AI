@@ -319,7 +319,7 @@ def process_input():
                         ai_response = "There are multiple options. Here are the top 5 results:\n\n"
                         for i, option in enumerate(options):
                             ai_response += f"{i + 1}. {option}\n"
-                        ai_response += "\nPlease provide a more specific search term or say 'exit' to cancel."
+                        ai_response += "\n. Please provide a more specific search term or say 'exit' to cancel."
                         response_label.config(text=textwrap.fill(ai_response, width=100))
                         AssistantFrame.update()
                         speak(ai_response)
