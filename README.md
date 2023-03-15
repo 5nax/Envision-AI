@@ -1,13 +1,3 @@
-# Envision-AI
- Envision AI is an assistive technology app that leverages the power of artificial intelligence to help blind and visually impaired individuals with daily tasks.
-Features included are:	\n
-	•	Computer Vision: With YOLOv3 object detection- It provides a very fast and highly accurate result. Uses PYTTsx3 module for TTS conversion
-	•	AI Assistant: A simple ai chat bot which can provide search results, tell you the weather…etc.
-	•	Game: A simple game which takes voice as input. 
-![image](https://user-images.githubusercontent.com/97379931/225302220-adb309cf-e3a2-44be-9966-4ac14094003e.png)
-
-
-
 <!-- PROJECT SHIELDS -->
 <!--
 *** I'm using markdown "reference style" links for readability.
@@ -17,24 +7,14 @@ Features included are:	\n
 *** https://www.markdownguide.org/basic-syntax/#reference-style-links
 -->
 
-[![Forks][forks-shield]][https://github.com/5nax/Envision-AI/forks]
-[![Stargazers][stars-shield]][https://github.com/5nax/Envision-AI/stargazers]
-[![Issues][issues-shield]][https://github.com/5nax/Envision-AI/issues]
-[![LinkedIn][linkedin-shield]][https://www.linkedin.com/in/himal-panta-b27873232/]
-
-
-
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/othneildrew/Best-README-Template">
-    <img src="![icon](https://user-images.githubusercontent.com/97379931/225303799-dfefb029-5b9c-4d0f-88b1-98cb92dbd436.png) " alt="Logo" width="80" height="80">
-  </a>
-
-  <h3 align="center">ENVISION AI</h3>
+ 
+  <h1 align="center">ENVISION AI</h1>
 
   <p align="center">
-    An awesome Blind Assistance focused project!
+    AI Powered Blind Assistant Tool
     <br />
     <a href="https://github.com/5nax/Envision-AI"><strong>Explore the docs »</strong></a>
     <br />
@@ -62,13 +42,9 @@ Features included are:	\n
       <a href="#getting-started">Getting Started</a>
       <ul>
         <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
       </ul>
     </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
 </details>
 
@@ -77,8 +53,8 @@ Features included are:	\n
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Envison Screen Shot][![image](https://user-images.githubusercontent.com/97379931/225304945-ab4e4457-ee42-4e6a-ab00-cd40f99d492a.png)
-]]
+![image](https://user-images.githubusercontent.com/97379931/225304945-ab4e4457-ee42-4e6a-ab00-cd40f99d492a.png)
+
 
 Envision AI is an assistive technology app that leverages the power of artificial intelligence to help blind and visually impaired individuals with daily tasks.
 
@@ -96,8 +72,9 @@ Features included are:
 
 Here are the major tools used to build this project:
 
-YOLOV3
-PYTTsX3
+* YOLOV3
+* PYTTsX3
+* Tkinter for GUI
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -113,29 +90,29 @@ To get a local copy up and running follow these simple example steps.
 
 You need to import the following modules
 * OpenCV
-  ```sh
-  pip install opencv-python
-  ```
- * Numpy
-  ```sh
-  pip install numpy
-  ```
- * tkinter
-  ```sh
-  pip install tkinter
-  ```
- * PYTTSX3
-  ```sh
-  pip install pyttsx3
-  ```
- * Pil
-  ```sh
-  pip install pillow
-  ```
- * Wikipedia
-  ```sh
-  pip install wikipedia
-  ```
+```sh
+pip install opencv-python
+```
+* Numpy
+```sh
+pip install numpy
+```
+* tkinter
+```sh
+pip install tkinter
+```
+* PYTTSX3
+```sh
+pip install pyttsx3
+```
+* Pil
+```sh
+pip install pillow
+```
+* Wikipedia
+```sh
+pip install wikipedia
+```
 
 <!-- CONTACT -->
 ## Contact
