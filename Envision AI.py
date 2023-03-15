@@ -305,7 +305,7 @@ def process_input():
                     user_label.config(text=query.capitalize())
                     AssistantFrame.update()
                     try:
-                        ai_response = "Searching ..."
+                        ai_response = "Searching for " + query + "..."
                         response_label.config(text=textwrap.fill(ai_response, width=100))
                         AssistantFrame.update()
                         speak(ai_response)
@@ -316,13 +316,13 @@ def process_input():
                         speak(ai_response)
                     except wikipedia.exceptions.DisambiguationError as e:
                         options = e.options[:5]  # limit options to the top 5
-                        ai_response = "There are multiple options. Please provide a more specific search term or Say 'exit' to cancel."
+                        ai_response = "There are multiple options. Here are the top 5 results:\n\n"
+                        for i, option in enumerate(options):
+                            ai_response += f"{i + 1}. {option}\n"
+                        ai_response += "\nPlease provide a more specific search term or say 'exit' to cancel."
                         response_label.config(text=textwrap.fill(ai_response, width=100))
                         AssistantFrame.update()
                         speak(ai_response)
-                        response_label.config(text=textwrap.fill(options, width=100))
-                        AssistantFrame.update()
-                        speak(options)
                         while True:
                             query = take_command().lower()
                             user_label.config(text=query.capitalize())
@@ -350,6 +350,10 @@ def process_input():
                                 response_label.config(text=textwrap.fill(ai_response, width=100))
                                 AssistantFrame.update()
                                 speak(ai_response)
+                                response_label.config(text=textwrap.fill(options, width=100))
+                                AssistantFrame.update()
+                                speak(options)
+
                                 for option in options:
                                     response_label.config(text=textwrap.fill(option, width=100))
                                     AssistantFrame.update()
