@@ -19,18 +19,8 @@ from PIL import Image, ImageFilter
 from PIL import ImageTk
 import random
 
-def speak(audio):
-    engine.say(audio)
-    engine.runAndWait()
-
-def speak1(response):
-    engine.say(response)
-    engine.runAndWait()
-
-def speak_label(label, direction, engine):
-    engine.say(f"{label} on your {direction}")
-    engine.runAndWait()
 ###########################################################################################
+
 language = 'en'
 
 engine = pyttsx3.init('sapi5')
@@ -44,6 +34,8 @@ rate = engine.getProperty('rate')
 engine.setProperty('rate', 150)
 
 assistant_running = False
+
+running = True
 
 ts = time.time()
 
@@ -65,12 +57,24 @@ mont = {'01': 'January',
         '12': 'December'
         }
 
-
-###########################################################################################
 def tick():
     time_string = time.strftime('%I:%M:%S %p')
     clock.config(text=time_string)
     clock.after(200, tick)
+
+###########################################################################################
+
+def speak(audio):
+    engine.say(audio)
+    engine.runAndWait()
+
+def speak1(response):
+    engine.say(response)
+    engine.runAndWait()
+
+def speak_label(label, direction, engine):
+    engine.say(f"{label} on your {direction}")
+    engine.runAndWait()
 
 def take_command():
     r = sr.Recognizer()
@@ -95,9 +99,7 @@ def take_command():
         return "Speech Recognition could not understand audio"
     return query
 
-
 ###########################################################################################
-
 
 def get_direction(x, y, w, h, width, height):
     """
@@ -121,7 +123,6 @@ def get_direction(x, y, w, h, width, height):
         direction += " middle"
 
     return direction
-
 
 def run_computer_vision():
     lmain = tk.Label(CVFrame1, text="Computer Vision Started \n Press the key 'Q' on your keyboard to stop\n  Computer Vision",
@@ -217,15 +218,12 @@ def run_computer_vision():
     cv2.destroyAllWindows()
     Camera()
 
-
-
 def computervision1():
     global running
     running = True
     t = threading.Thread(target=run_computer_vision)
     t.start()
     speak("Starting Computer Vision")
-
 
 def Camera():
 
@@ -281,6 +279,7 @@ def Camera():
 
         # start the label update loop in the main thread
         update_label()
+
 ########################################################################################
 def process_input():
     while assistant_running:
@@ -459,7 +458,6 @@ def process_input():
                 speak("Sorry, I didn't understand. Please start the voice assistant again.")
         time.sleep(1)
 
-
 def start_assistant():
     global assistant_running
     assistant_running = True
@@ -471,20 +469,16 @@ def start_assistant():
     t = threading.Thread(target=process_input)
     t.start()
 
-
 def stop_assistant():
     global assistant_running
     assistant_running = False
-
-
-
-
 
 ########################################################################################
 
 def Game1():
     t = threading.Thread(target=Game)
     t.start()
+
 def Game():
     # display main menu
     response = ("Welcome to Get to the University Game!")
@@ -561,7 +555,6 @@ def Game():
 
     threading.Thread(target=get_user_input).start()
 
-running = True
 def gamerun():
     global running
     if running:
@@ -577,9 +570,7 @@ def gamerun():
         strlabel.config(text="You must get to college on time, lets hope nothing slows you down...")
         strlabel.update()
         speak("You must get to college on time, lets hope nothing slows you down...")
-        #
-        # repeats 100 times just for expansions sake
-        # compiles a list to cover each of the 100 potential slots
+        
     while True:
         totaltime = 0
         timetaken = 0
@@ -612,8 +603,7 @@ def gamerun():
             if used[choice] != 101:
                 used[choice] = 101
                 userpl = True
-                # crude way of running all the functions but i dont know
-                # a better way of doing it
+                #random Choice for selecting the path
                 if choice == 1:
                     timetaken = Money()
                 elif choice == 2:
@@ -662,6 +652,7 @@ def gamerun():
                 text="You've finally made it to the university, and you were only {0} minutes late!".format(totaltime))
             strlabel.update()
             speak("You've finally made it to university, and you were {0} minutes late!".format(totaltime))
+
 def stop_function():
     global running
     running = False
@@ -669,7 +660,6 @@ def stop_function():
     user_label1.config(text = " ")
     return
     show_frame(MainPage)
-
 
 def vinput():
     # validates inputs so it can't crash and the choice can only be a, b or c
@@ -687,7 +677,6 @@ def vinput():
         else:
             speak("That's not a valid input")
     return inp
-
 
 def Money():
     strlabel.config(text="You're on your way to university when you stumble upon a lost wallet on the ground.")
@@ -777,7 +766,6 @@ def river():
     speak(f"It took you {timetaken} minutes to handle the situation.")
     return timetaken
 
-
 def AppleStore():
     strlabel.config(text="As you approach the AppleStore, you hear loud noises and see a commotion.")
     strlabel.update()
@@ -829,7 +817,6 @@ def AppleStore():
         timetaken = 0
     return timetaken
 
-
 def lost_child():
     strlabel.config(text="You are walking in the park when you notice a lost child crying")
     strlabel.update()
@@ -865,7 +852,6 @@ def lost_child():
         speak("Shame on you! You should always help someone in need")
         timetaken = 0
     return timetaken
-
 
 def kidnapping():
     strlabel.config(text="You're walking to university when you suddenly hear footsteps behind you")
@@ -922,7 +908,6 @@ def kidnapping():
     timetaken = 4320
     return timetaken
 
-
 def Kitten():
     strlabel.config(text="As you walk, you hear a soft meowing sound coming from behind a nearby tree.")
     strlabel.update()
@@ -964,7 +949,6 @@ def Kitten():
         strlabel.update()
         speak("Good luck with your day at university!")
     return timetaken
-
 
 def prisoner():
     strlabel.config(text="As you walk down the street, you notice a group of people walking towards you.")
@@ -1011,7 +995,6 @@ def prisoner():
         #
         timetaken = 0
     return timetaken
-
 
 def dinosaur():
     timetaken=0
@@ -1074,48 +1057,71 @@ def dinosaur():
 
 ######################################## USED STUFFS ############################################
 
-
 def clear1():
     response_label.config(text="")
     user_label.config(text="")
     stop_assistant()
     show_frame(MainPage)
 
-
-###########################################################################################
 def contact():
     mess._show(title='Contact us', message="Please contact us at : himalpanta@gmail.com ")
     engine.speak("Please Contact us at : himalpanta@gmail.com")
-
 
 def confirm2():
     answer = askyesno(title='Quit', message='Are you sure that you want to Quit?')
     if answer:
         window.destroy()
 
-
 def show_frame(frame):
     t = threading.Thread(target=frame.tkraise())
     t.start()
 
-
 def increase_size(event):
     event.widget.config(font=('Quantum Mechanics', 13, 'bold'))
 
-
 def decrease_size(event):
     event.widget.config(font=('Quantum Mechanics', 12))
-
 
 def update_time():
     current_time = time.strftime("%I:%M:%S %p")
     clock_label.configure(text=current_time)
     MainPage.after(1000, update_time)
 
+def GamePage1():
+    show_frame(GamePage)
+    response = " Game Page Selected "
+    t = threading.Thread(target=speak1, args=(response,))
+    t.start()
+    strlabel.config(text="Press Start Game Button ")
 
-###########################################################################################
+def ComputervisionPage1():
+    show_frame(ComputerVisionPage)
+    response = " Computer Vision Page Selected "
+    t = threading.Thread(target=speak1, args=(response,))
+    t.start()
+    Camera()
 
-################################ TEXBOX & LABELS ##################################
+def AssistantPage1():
+    show_frame(AssistantPage)
+    response = " Assistant Page Selected "
+    t = threading.Thread(target=speak1, args=(response,))
+    t.start()
+    response_label.config(text="Press Start Assistance Button ")
+
+def Back_btn():
+    show_frame(MainPage)
+    response = " Back Button Selected "
+    t = threading.Thread(target=speak1, args=(response,))
+    t.start()
+
+def Back_btn1():
+    show_frame(MainPage)
+    response = " Back Button Selected "
+    t = threading.Thread(target=speak1, args=(response,))
+    t.start()
+    stop_function()
+
+################################ USER INTERFACE DESIGN ##################################
 
 window = tk.Tk()
 window.geometry("1366x768")
@@ -1125,8 +1131,11 @@ window.rowconfigure(0, weight=1)
 window.tk.call('wm', 'iconphoto', window._w, tk.PhotoImage(file='icon.png'))
 
 filename1 = ImageTk.PhotoImage(Image.open('Background-Frame-CV.jpg'))
+
 filename2 = ImageTk.PhotoImage(Image.open('Background-Frame-Ai.jpg'))
+
 filename3 = ImageTk.PhotoImage(Image.open('Background-Frame-GG.jpg'))
+
 filename = ImageTk.PhotoImage(Image.open('Background.jpg'))
 
 ########################################################--------MAIN MENU PAGE############################################################################
@@ -1144,15 +1153,6 @@ button1.bind("<Leave>", decrease_size)
 button1.pack()
 button1.place(x=60, y=490)
 
-
-def ComputervisionPage1():
-    show_frame(ComputerVisionPage)
-    response = " Computer Vision Page Selected "
-    t = threading.Thread(target=speak1, args=(response,))
-    t.start()
-    Camera()
-
-
 button2 = Button(MainPage, text="A I  A s s i s t a n t", font=('Quantum Mechanics', 12),
                  command=lambda: AssistantPage1(), relief=RAISED, bg="white", fg="black",
                  width=18, height=1, borderwidth=0)
@@ -1161,63 +1161,23 @@ button2.bind("<Leave>", decrease_size)
 button2.pack()
 button2.place(x=315, y=490)
 
-
-def AssistantPage1():
-    show_frame(AssistantPage)
-    response = " Assistant Page Selected "
-    t = threading.Thread(target=speak1, args=(response,))
-    t.start()
-    response_label.config(text="Press Start Assistance Button ")
-
-
-
-button4 = Button(MainPage, text="G a m e", font=('Quantum Mechanics', 12),
+button3 = Button(MainPage, text="G a m e", font=('Quantum Mechanics', 12),
                  command=lambda: GamePage1(), bg="white", fg="black",
                  width=17, height=1, borderwidth=0)
-button4.bind("<Enter>", increase_size)
-button4.bind("<Leave>", decrease_size)
-button4.pack()
-button4.place(x=600, y=490)
+button3.bind("<Enter>", increase_size)
+button3.bind("<Leave>", decrease_size)
+button3.pack()
+button3.place(x=600, y=490)
 
-
-def GamePage1():
-    show_frame(GamePage)
-    response = " Game Page Selected "
-    t = threading.Thread(target=speak1, args=(response,))
-    t.start()
-    strlabel.config(text="Press Start Game Button ")
-
-
-
-button6 = Button(MainPage, text=" Q u i t ", font=('Quantum Mechanics', 11, 'bold'), command=lambda: confirm2(),
+button4 = Button(MainPage, text=" Q u i t ", font=('Quantum Mechanics', 11, 'bold'), command=lambda: confirm2(),
                  bg="#211c44", fg="#fff", width=10, height=0, borderwidth=0)
-button6.pack()
-button6.place(x=633, y=685)
+button4.pack()
+button4.place(x=633, y=685)
 
 datef = tk.Label(MainPage, text="" + day + "-" + mont[month] + "-" + year + "", fg="black", bg="white", height=1,
                  font=('Century Gothic', 25))
 datef.pack()
 datef.place(x=80, y=80)
-
-
-def Back_btn():
-    show_frame(MainPage)
-    response = " Back Button Selected "
-    t = threading.Thread(target=speak1, args=(response,))
-    t.start()
-
-
-
-def Back_btn1():
-    show_frame(MainPage)
-    response = " Back Button Selected "
-    t = threading.Thread(target=speak1, args=(response,))
-    t.start()
-    stop_function()
-
-
-
-
 
 
 clock_label = tk.Label(MainPage, fg="white", bg="#004aad", height=1, font=('Century Gothic', 25))
@@ -1265,6 +1225,7 @@ AssistantPage = tk.Frame(window, width=1366, height=768)
 AssistantPage.grid(row=0, column=0, stick='nsew')
 background_label = tk.Label(AssistantPage, image=filename2)
 background_label.place(x=0, y=0, relwidth=1, relheight=1)
+
 image = Image.open("Background-Frame-Ai.jpg")
 image = image.filter(ImageFilter.GaussianBlur(radius=10))
 
@@ -1302,6 +1263,7 @@ back.place(x=950, y=700)
 clock = tk.Label(AssistantPage, fg="white", bg="#004aad", height=1, font=('Century Gothic', 25))
 clock.pack()
 clock.place(x=1000, y=80)
+
 tick()
 ################################################ Game PAGE ########################################################################
 
@@ -1348,6 +1310,7 @@ back = tk.Button(GamePage, text="Back", command=lambda: Back_btn1(), fg="white",
 back.place(x=950, y=700)
 
 
-show_frame(MainPage)
 ########################################################################################################################
+show_frame(MainPage)
+
 window.mainloop()
