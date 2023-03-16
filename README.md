@@ -117,7 +117,7 @@ pip install wikipedia
 <!-- CONTACT -->
 ## Contact
 
-Your Name - [@snax_x](https://www.instagram.com/snax_smh/) - himalpanta@gmail.com
+Himal Panta - [@snax_x](https://www.instagram.com/snax_smh/) - himalpanta@gmail.com
 
 Linkedin Link: [https://www.linkedin.com/in/himal-panta-b27873232/]
 
