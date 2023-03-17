@@ -164,7 +164,7 @@ def run_computer_vision():
     # Initialize YOLOv5 (replace 'yolov5s.pt' with the downloaded model)
     device = torch.device("cuda:0")
 
-    model = YOLOv5('yolov5x.pt', device=device)
+    model = YOLOv5('\\yolov5l.pt', device=device)
 
     # Initialize camera
     cap = cv2.VideoCapture(0)
@@ -481,8 +481,10 @@ def stop_assistant():
 ########################################################################################
 
 def Game1():
-    t = threading.Thread(target=Game)
-    t.start()
+    response= "Start Game Selected"
+    speak(response)
+    t1 = threading.Thread(target=Game)
+    t1.start()
 
 def display_text_and_speak(text):
     strlabel.config(text=text)
@@ -517,8 +519,10 @@ def Game():
                     display_text_and_speak("Thanks for playing!")
                     break
             elif play == "no" or play == "exit":
-                display_text_and_speak("Bye bye!")
+                display_text_and_speak("Sure! Quitting the game")
                 stop_function()
+                strlabel.config(text="Press Start Game Button")
+                strlabel.update()
                 return
 
         # Reset the GUI labels
@@ -1063,11 +1067,13 @@ def GamePage1():
     strlabel.config(text="Press Start Game Button ")
 
 def ComputervisionPage1():
-    show_frame(ComputerVisionPage)
+    
     response = " Computer Vision Page Selected "
     t = threading.Thread(target=speak1, args=(response,))
     t.start()
-    Camera()
+    show_frame(ComputerVisionPage)
+    t1 = threading.Thread(target=Camera)
+    t1.start()
 
 def AssistantPage1():
     show_frame(AssistantPage)
@@ -1179,10 +1185,11 @@ StartCV = tk.Button(CVFrame, text="➔ Start Computer Vision", command=lambda: c
                     width=24, height=1, activebackground="white", font=('Century Gothic', 15))
 StartCV.place(x=15, y=90)
 
-clock = tk.Label(ComputerVisionPage, fg="white", bg="#004aad", height=1, font=('Century Gothic', 25))
-clock.pack()
-clock.place(x=1000, y=80)
-tick()
+clock_label = tk.Label(ComputerVisionPage, fg="white", bg="#004aad", height=1, font=('Century Gothic', 25))
+clock_label.pack()
+clock_label.place(x=1000, y=80)
+
+update_time()
 
 back = tk.Button(ComputerVisionPage, text="Back", command=lambda: Back_btn(), fg="white", bg="#404040",
                  width=20, height=1, activebackground="white", font=('Century Gothic', 15))
