@@ -18,7 +18,10 @@ import wikipedia
 from PIL import Image, ImageFilter
 from PIL import ImageTk
 import random
-
+from yolov5 import YOLOv5
+import torch 
+from torchvision.ops import nms
+import queue
 ###########################################################################################
 
 language = 'en'
@@ -124,88 +127,90 @@ def get_direction(x, y, w, h, width, height):
 
     return direction
 
+
+
+def detect_objects(frame, model):
+    results = model.predict(frame)
+    boxes = results.xyxy[0][:, :4]  # Extract only the x1, y1, x2, y2 values
+    class_ids = results.xyxy[0][:, 5].long()  # Convert class IDs to integer
+    confidences = results.xyxy[0][:, 4]
+
+    # Apply confidence threshold
+    min_confidence = 0.5
+    mask = confidences > min_confidence
+    boxes = boxes[mask]
+    class_ids = class_ids[mask]
+    confidences = confidences[mask]
+
+    # Apply Non-Maximum Suppression
+    device = torch.device("cuda:0")
+    box_tensors = torch.tensor(boxes).to(device)
+    confidence_tensors = torch.tensor(confidences).to(device)
+    nms_indices = nms(box_tensors, confidence_tensors, iou_threshold=0.4)
+
+    indexes = nms_indices.tolist()
+    return indexes, boxes, confidences, class_ids
+
 def run_computer_vision():
+    # Replace the following with your custom Label and placement code
     lmain = tk.Label(CVFrame1, text="Computer Vision Started \n Press the key 'Q' on your keyboard to stop\n  Computer Vision",
                      font=('Century Gothic', 14), bg="#D0D3D4",height=30,width=50)
     lmain.place(relx=0, rely=0)
-    # Initialize YOLOv3
-    net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
-    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
-
+    
     # Load classes
-    with open("yolov3.txt", "r") as f:
+    with open("coco.names", "r") as f:
         classes = [line.strip() for line in f.readlines()]
 
-    # Get output layers
-    layer_names = net.getLayerNames()
-    output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+    # Initialize YOLOv5 (replace 'yolov5s.pt' with the downloaded model)
+    device = torch.device("cuda:0")
+
+    model = YOLOv5('yolov5x.pt', device=device)
 
     # Initialize camera
     cap = cv2.VideoCapture(0)
-
-    # Initialize frame counter
-    frame_count = 0
-
+    last_speak_time = 0
+    cooldown_time = 4
+    spoken_labels = {}  # cooldown in seconds
     while True:
         # Read from camera
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Increment frame counter
-        frame_count += 1
+        # Resize the frame
+        scale = 0.5
+        frame = cv2.resize(frame, (int(frame.shape[1] * scale), int(frame.shape[0] * scale)))
 
-        if frame_count % 2 == 0:
-            # Downsample frame
-            frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-        else:
-            # Continue to next frame without processing
-            continue
-
-        # Prepare input for YOLOv3
-        blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, False)
-        net.setInput(blob)
-
-        # Get outputs from YOLOv3
-        outs = net.forward(output_layers)
-
-        # Process outputs
-        boxes = []
-        confidences = []
-        class_ids = []
-
-        for out in outs:
-            for detection in out:
-                scores = detection[5:]
-                class_id = np.argmax(scores)
-                confidence = scores[class_id]
-                if confidence > 0:
-                    cx = int(detection[0] * frame.shape[1])
-                    cy = int(detection[1] * frame.shape[0])
-                    w = int(detection[2] * frame.shape[1])
-                    h = int(detection[3] * frame.shape[0])
-                    x = int(cx - w / 2)
-                    y = int(cy - h / 2)
-                    boxes.append([x, y, w, h])
-                    confidences.append(float(confidence))
-                    class_ids.append(class_id)
-
-        # Apply non-max suppression
-        indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+        # Detect objects
+        indexes, boxes, confidences, class_ids = detect_objects(frame, model)
 
         # Draw boxes and labels
-        indexes = np.array(indexes)
-        for i in indexes.flatten():
-            x, y, w, h = boxes[i]
-            label = classes[class_ids[i]]
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, label, (x, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        for idx in indexes:
+            x, y, w, h = boxes[idx]
+            x, y, w, h = int(x), int(y), int(w), int(h)
+            label = classes[int(class_ids[idx])]
+
+            # Get the direction
             direction = get_direction(x, y, w, h, frame.shape[1], frame.shape[0])
-            t = threading.Timer(1, speak_label, args=(label, direction, engine))
-            t.start()
+
+            # Concatenate label and direction
+            label_with_direction = f"{label} ({direction})"
+
+            # Draw the bounding box and label with direction
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(frame, label_with_direction, (x, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+
+            current_time = time.time()
+
+            # Use the custom speak_label function only if cooldown has passed and the label is 'person'
+            if (label not in spoken_labels) or (current_time - spoken_labels[label]) > cooldown_time:
+                t = threading.Timer(1, speak_label, args=(label, direction, engine))
+                t.start()
+                spoken_labels[label] = current_time
+
         # Show the resulting frame
-        cv2.imshow("Detection",frame)
+        cv2.imshow("Detection", frame)
+
         # Check for key presses
         key = cv2.waitKey(1)
         if key == ord('q'):
@@ -218,12 +223,20 @@ def run_computer_vision():
     cv2.destroyAllWindows()
     Camera()
 
+
 def computervision1():
     global running
     running = True
     t = threading.Thread(target=run_computer_vision)
     t.start()
     speak("Starting Computer Vision")
+
+def grab_frames(cap, frame_queue):
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_queue.put(frame)
 
 def Camera():
 
@@ -246,36 +259,28 @@ def Camera():
         lmain = tk.Label(CVFrame1, highlightthickness=0, bd=0)
         lmain.place(x=-10, y=55)
 
-        # Create a Tkinter compatible image
-        tk_image = None
+        # Frame queue
+        frame_queue = queue.Queue(maxsize=5)
 
-        # function for video streaming
-        def video_stream():
-            nonlocal tk_image
-            while True:
-                _, frame = cap.read()
+        # start the frame grabbing thread
+        grab_thread = threading.Thread(target=grab_frames, args=(cap, frame_queue))
+        grab_thread.daemon = True
+        grab_thread.start()
+
+        # function for updating the label with the frame
+        def update_label():
+            try:
+                frame = frame_queue.get(timeout=0.1)
                 cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
                 img = Image.fromarray(cv2image)
-
-                # update the tk_image
                 tk_image = ImageTk.PhotoImage(image=img)
-
-                # wait for 10 milliseconds before capturing the next frame
-                time.sleep(0.01)
-
-        # function for updating the label with the tk_image
-        def update_label():
-            nonlocal tk_image
-            if tk_image is not None:
                 lmain.configure(image=tk_image)
                 lmain.image = tk_image  # prevent garbage collection
+            except queue.Empty:
+                pass
+
             # schedule the update to happen again after 10ms
             lmain.after(10, update_label)
-
-        # start the video streaming in a separate thread
-        t = threading.Thread(target=video_stream)
-        t.daemon = True
-        t.start()
 
         # start the label update loop in the main thread
         update_label()
@@ -479,73 +484,42 @@ def Game1():
     t = threading.Thread(target=Game)
     t.start()
 
+def display_text_and_speak(text):
+    strlabel.config(text=text)
+    strlabel.update()
+    speak(text)
+
+def ask_question_and_get_response(question):
+    display_text_and_speak(question)
+    while True:
+        response = take_command().lower()
+        user_label1.config(text=response)
+        if response in ["yes", "no", "exit"]:
+            break
+        else:
+            display_text_and_speak("I didn't catch that. Please say 'yes' or 'no'.")
+    return response
+
 def Game():
     # display main menu
-    response = ("Welcome to Get to the University Game!")
-    strlabel.config(text=response)
-    strlabel.update()
-    speak(".....Welcome to Get to the University Game!")
-    strlabel.config(text="The game where you try to get in on time to your lessons!")
-    strlabel.update()
-    speak("The game where you try to get in on time to your lessons!")
-    strlabel.config(text="Would you like to play?")
-    strlabel.update()
-    speak("Would you like to play?")
+    display_text_and_speak("Welcome to Get to the University Game!")
+    display_text_and_speak("The game where you try to get in on time to your lessons!")
 
     def get_user_input():
         while True:
-            play = take_command().lower()
-            user_label1.config(text=play)
-
-            # Handle user input
+            play = ask_question_and_get_response("Would you like to play?")
             if play == "yes":
-                strlabel.config(text="Let's go!")
-                strlabel.update()
-                speak("Let's go!")
+                display_text_and_speak("Let's go!")
                 time.sleep(1)
-                t = threading.Thread(target=gamerun())
-                t.start()
-                strlabel.config(text="Do you want to play again?")
-                strlabel.update()
-                speak("Do you want to play again?")
-                break
-            elif play == "no":
-                strlabel.config(text="Bye bye!")
-                strlabel.update()
-                speak("Bye bye!")
+                gamerun()
+                again = ask_question_and_get_response("Do you want to play again?")
+                if again == "no":
+                    display_text_and_speak("Thanks for playing!")
+                    break
+            elif play == "no" or play == "exit":
+                display_text_and_speak("Bye bye!")
                 stop_function()
                 return
-            elif play == "exit":
-                strlabel.config(text="Bye bye!")
-                strlabel.update()
-                speak("Bye bye!")
-                stop_function()
-                return
-            else:
-                strlabel.config(text="I didn't catch that. Please say 'yes' or 'no'.")
-                strlabel.update()
-                speak("I didn't catch that. Please say 'yes' or 'no'.")
-
-        while True:
-            again = take_command().lower()
-            if again == "yes":
-                strlabel.config(text="Let's go again!")
-                strlabel.update()
-                speak("Let's go again!")
-                t = threading.Thread(target=gamerun())
-                t.start()
-                strlabel.config(text="Do you want to play again?")
-                strlabel.update()
-                speak("Do you want to play again?")
-            elif again == "no":
-                strlabel.config(text="Thanks for playing!")
-                strlabel.update()
-                speak("Thanks for playing!")
-                break
-            else:
-                strlabel.config(text="I didn't catch that. Please say 'yes' or 'no'.")
-                strlabel.update()
-                speak("I didn't catch that. Please say 'yes' or 'no'.")
 
         # Reset the GUI labels
         user_label1.config(text="")
@@ -554,7 +528,7 @@ def Game():
         user_label1.update()
 
     threading.Thread(target=get_user_input).start()
-
+    
 def gamerun():
     global running
     if running:
@@ -625,9 +599,9 @@ def gamerun():
                     count -= 1
                 # when an event is run then the user must hit enter to continue
                 if userpl:
-                    strlabel.config(text="say continue to proceed")
+                    strlabel.config(text="Say continue to proceed")
                     strlabel.update()
-                    speak("say continue to proceed")
+                    speak("Say continue to proceed")
                     a = take_command().lower()
                     user_label1.update()
                     if a == "exit":
@@ -662,20 +636,16 @@ def stop_function():
     show_frame(MainPage)
 
 def vinput():
-    # validates inputs so it can't crash and the choice can only be a, b or c
-    valid_inputs = {"number one", "number 2", "number 3"}
+    # validates inputs so it can't crash and the choice can only be a, b, or c
+    valid_inputs = ["number one", "number 2", "number 3"]
+
     while True:
-        try:
-            inp = take_command().lower()
-        except:
-            # not strictly needed but in case something could happen
-            # this is there as a fall back just in case, slightly unnecessary
-            speak("That's not anything!")
-            continue
+        inp = take_command().lower()
         if inp in valid_inputs:
             break
         else:
             speak("That's not a valid input")
+
     return inp
 
 def Money():
@@ -722,7 +692,6 @@ def Money():
         strlabel.update()
         speak("They thank you for your honesty and give you a certificate of recognition.")
         timetaken = 15
-    speak(f"It took you {timetaken} minutes to handle the situation.")
     return timetaken
 
 def river():
@@ -763,7 +732,6 @@ def river():
         speak("You spend some time searching and eventually find a small boat to cross the river.")
         #
         timetaken = 20
-    speak(f"It took you {timetaken} minutes to handle the situation.")
     return timetaken
 
 def AppleStore():
