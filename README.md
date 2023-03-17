@@ -1,13 +1,3 @@
-<!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
-
-<!-- PROJECT LOGO -->
 <br />
 <div align="center">
  
@@ -26,9 +16,6 @@
   </p>
 </div>
 
-
-
-<!-- TABLE OF CONTENTS -->
 <details>
   <summary>Table of Contents</summary>
   <ol>
@@ -48,9 +35,6 @@
   </ol>
 </details>
 
-
-
-<!-- ABOUT THE PROJECT -->
 ## About The Project
 
 ![image](https://user-images.githubusercontent.com/97379931/225304945-ab4e4457-ee42-4e6a-ab00-cd40f99d492a.png)
@@ -60,31 +44,25 @@ Envision AI is an assistive technology app that leverages the power of artificia
 
 
 Features included are:
-* Computer Vision: With YOLOv3 object detection- It provides a very fast and highly accurate result. Uses PYTTsx3 module for TTS conversion
+* Computer Vision: With YOLOv5 object detection- It provides a very fast and highly accurate result. Uses PYTTsx3 module for TTS conversion
 * AI Assistant: A simple ai chat bot which can provide search results, tell you the weather…etc.
 * Game: A simple game which takes voice as input.
 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-### Built With
-
 Here are the major tools used to build this project:
 
-* YOLOV3
+* YOLOV5
 * PYTTsX3
 * Tkinter for GUI
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-
-<!-- GETTING STARTED -->
 ## Getting Started
 
-This is an example of how you may give instructions on setting up your project locally.
-To get a local copy up and running follow these simple example steps.
+You must install the Prerequisites to run the program and also CUDA and CUDAdnn modules if your GPU supports it.
 
 ### Prerequisites
 
@@ -96,6 +74,10 @@ pip install opencv-python
 * Numpy
 ```sh
 pip install numpy
+```
+* Pytorch
+```sh
+https://pytorch.org/get-started/locally/- Select the options for your GPU with CUDA version to generate a install command
 ```
 * tkinter
 ```sh
