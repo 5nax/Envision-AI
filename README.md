@@ -49,15 +49,12 @@ Features included are:
 * Game: A simple game which takes voice as input.
 
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 Here are the major tools used to build this project:
 
 * YOLOV5
 * PYTTsX3
 * Tkinter for GUI
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 ## Getting Started
@@ -102,10 +99,6 @@ pip install wikipedia
 Himal Panta - [@snax_x](https://www.instagram.com/snax_smh/) - himalpanta@gmail.com
 
 Linkedin Link: [https://www.linkedin.com/in/himal-panta-b27873232/]
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
 
 
 <!-- MARKDOWN LINKS & IMAGES -->
