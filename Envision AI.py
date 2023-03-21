@@ -10,7 +10,6 @@ from tkinter import *
 from tkinter import messagebox as mess
 from tkinter.messagebox import askyesno
 import cv2
-import numpy as np
 import pyttsx3
 import requests
 import speech_recognition as sr
@@ -18,10 +17,15 @@ import wikipedia
 from PIL import Image, ImageFilter
 from PIL import ImageTk
 import random
+import os
+from tkinter import simpledialog, messagebox
 from yolov5 import YOLOv5
-import torch 
+import torch
 from torchvision.ops import nms
 import queue
+import face_recognition
+import pickle
+from mtcnn import MTCNN
 ###########################################################################################
 
 language = 'en'
@@ -34,7 +38,7 @@ engine.setProperty('voice', voices[1].id)
 
 rate = engine.getProperty('rate')
 
-engine.setProperty('rate', 150)
+engine.setProperty('rate', 130)
 
 assistant_running = False
 
@@ -60,10 +64,12 @@ mont = {'01': 'January',
         '12': 'December'
         }
 
+
 def tick():
     time_string = time.strftime('%I:%M:%S %p')
     clock.config(text=time_string)
     clock.after(200, tick)
+
 
 ###########################################################################################
 
@@ -71,13 +77,17 @@ def speak(audio):
     engine.say(audio)
     engine.runAndWait()
 
+
 def speak1(response):
     engine.say(response)
     engine.runAndWait()
 
-def speak_label(label, direction, engine):
-    engine.say(f"{label} on your {direction}")
-    engine.runAndWait()
+
+def speak_label(label, direction, engine,stop_event):
+    if not stop_event.is_set():
+        engine.say(f"{label} on your {direction}")
+        engine.runAndWait()
+
 
 def take_command():
     r = sr.Recognizer()
@@ -102,7 +112,185 @@ def take_command():
         return "Speech Recognition could not understand audio"
     return query
 
-###########################################################################################
+
+####################################### Computer Vision Person Register ####################################################
+
+def add_new_face():
+
+    # Get the name for the new face
+    name = simpledialog.askstring("Input", "Enter the name of the person:",
+                                   parent=ComputerVisionPage)
+    if name:
+        # Capture the image and save it with the given name
+        capture_image_and_save(name)
+
+        # Encode the face and update the known faces
+        new_face_encoding, _ = encode_faces([f"{name}.jpg"], [name])
+        known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
+        known_face_encodings.extend(new_face_encoding)
+        known_face_names.extend([name])
+
+        # Save the updated known faces
+        save_known_faces(known_face_encodings, known_face_names, "known_faces.pkl")
+        messagebox.showinfo("Success", f"{name} has been added successfully!")
+
+
+def capture_image_and_save(name):
+    cap = cv2.VideoCapture(0)
+
+    while True:
+        ret, frame = cap.read()
+        cv2.imshow("Press 's' to save, 'q' to quit", frame)
+        key = cv2.waitKey(1)
+
+        if key == ord('s'):
+            cv2.imwrite(f"{name}.jpg", frame)
+            break
+        elif key == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+def encode_faces(image_paths, names):
+    known_face_encodings = []
+    known_face_names = []
+
+    for image_path, name in zip(image_paths, names):
+        image = face_recognition.load_image_file(image_path)
+        face_encoding = face_recognition.face_encodings(image)[0]
+        known_face_encodings.append(face_encoding)
+        known_face_names.append(name)
+
+    return known_face_encodings, known_face_names
+
+
+def save_known_faces(known_face_encodings, known_face_names, filename):
+    data = {
+        "encodings": known_face_encodings,
+        "names": known_face_names
+    }
+    with open(filename, "wb") as f:
+        pickle.dump(data, f)
+
+
+def load_known_faces(filename):
+    if not os.path.exists(filename) or os.path.getsize(filename) == 0:
+        return [], []
+
+    with open(filename, "rb") as f:
+        data = pickle.load(f)
+    return data["encodings"], data["names"]
+
+
+known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
+
+
+def update_known_face(name, known_face_encodings, known_face_names, filename):
+    cap = cv2.VideoCapture(0)
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        cv2.imshow("Press 's' to save the current frame or 'q' to quit", frame)
+        key = cv2.waitKey(1)
+
+        if key == ord('s'):
+            # Save the current frame as a temporary image
+            cv2.imwrite('temp_image.jpg', frame)
+            break
+        elif key == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    # Encode the face from the temporary image
+    temp_image_path = 'temp_image.jpg'
+    new_face_encoding = face_recognition.face_encodings(face_recognition.load_image_file(temp_image_path))[0]
+
+    # Find the index of the existing face encoding with the provided name
+    face_index = known_face_names.index(name)
+
+    # Replace the existing encoding and name in the lists
+    known_face_encodings[face_index] = new_face_encoding
+
+    # Save the updated data to the file
+    save_known_faces(known_face_encodings, known_face_names, filename)
+
+    # Remove the temporary image file
+    os.remove(temp_image_path)
+    messagebox.showinfo("Success", f"{name} has been updated successfully!")
+
+
+def update_known_face_button():
+    known_face_encodings, known_face_names
+    name = simpledialog.askstring("Update Known Face", "Enter the name of the person whose image you want to update:")
+    if name is not None:
+        if name in known_face_names:
+            update_known_face(name, known_face_encodings, known_face_names, "known_faces.pkl")
+            messagebox.showinfo("Update Known Face", f"Updated the image for {name}.")
+        else:
+            messagebox.showerror("Update Known Face", f"No saved image found for {name}.")
+
+
+def detect_known_faces(face_detector, known_face_encodings, known_face_names, frame):
+    face_locations = []
+    face_names = []
+
+    # Convert the image from BGR to RGB (as face_recognition uses the RGB format)
+    rgb_frame = frame[:, :, ::-1]
+
+
+    # Detect faces in the frame
+    face_detections = face_detector.detect_faces(rgb_frame)
+
+    for face in face_detections:
+        x, y, w, h = face['box']
+        top, right, bottom, left = y, x + w, y + h, x
+        face_locations.append((top, right, bottom, left))
+
+        # Extract the face encoding
+        face_encoding = face_recognition.face_encodings(rgb_frame, [(top, right, bottom, left)])[0]
+
+        # Match the encoding with the known faces
+        matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.6)
+        name = "Unknown"
+
+        if True in matches:
+            first_match_index = matches.index(True)
+            name = known_face_names[first_match_index]
+
+        face_names.append(name)
+
+    return face_locations, face_names
+
+
+def delete_face(name):
+    known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
+    try:
+        index = known_face_names.index(name)
+        del known_face_encodings[index]
+        del known_face_names[index]
+        save_known_faces(known_face_encodings, known_face_names, "known_faces.pkl")
+        os.remove(f"{name}.jpg")
+        messagebox.showinfo("Success", f"{name} has been deleted successfully!")
+    except ValueError:
+        messagebox.showerror("Error", f"{name} not found in the known faces!")
+
+
+def delete_all_known_faces(filename):
+    global known_face_encodings, known_face_names
+    known_face_encodings = []
+    known_face_names = []
+    data = {"encodings": known_face_encodings, "names": known_face_names}
+    with open(filename, "wb") as f:
+        pickle.dump(data, f)
+    messagebox.showinfo("Delete All Known Faces", "All known faces have been deleted.")
+
 
 def get_direction(x, y, w, h, width, height):
     """
@@ -127,8 +315,7 @@ def get_direction(x, y, w, h, width, height):
 
     return direction
 
-
-
+######################################## Computer Vision Detection ###################################################
 def detect_objects(frame, model):
     results = model.predict(frame)
     boxes = results.xyxy[0][:, :4]  # Extract only the x1, y1, x2, y2 values
@@ -151,12 +338,15 @@ def detect_objects(frame, model):
     indexes = nms_indices.tolist()
     return indexes, boxes, confidences, class_ids
 
+
 def run_computer_vision():
     # Replace the following with your custom Label and placement code
-    lmain = tk.Label(CVFrame1, text="Computer Vision Started \n Press the key 'Q' on your keyboard to stop\n  Computer Vision",
-                     font=('Century Gothic', 14), bg="#D0D3D4",height=30,width=50)
+    global face_locations, face_names
+    lmain = tk.Label(CVFrame1,
+                     text="Computer Vision Started \n Press the key 'Q' on your keyboard to stop\n  Computer Vision",
+                     font=('Century Gothic', 14), bg="#D0D3D4", height=30, width=50)
     lmain.place(relx=0, rely=0)
-    
+    face_detector = MTCNN()
     # Load classes
     with open("coco.names", "r") as f:
         classes = [line.strip() for line in f.readlines()]
@@ -164,13 +354,18 @@ def run_computer_vision():
     # Initialize YOLOv5 (replace 'yolov5s.pt' with the downloaded model)
     device = torch.device("cuda:0")
 
-    model = YOLOv5('\\yolov5l.pt', device=device)
+    model = YOLOv5('\\yolov5x.pt', device=device)
 
     # Initialize camera
     cap = cv2.VideoCapture(0)
     last_speak_time = 0
     cooldown_time = 4
     spoken_labels = {}  # cooldown in seconds
+
+    known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
+    skip_frames = 0
+    max_skip_frames = 5
+    stop_event = threading.Event()
     while True:
         # Read from camera
         ret, frame = cap.read()
@@ -184,12 +379,24 @@ def run_computer_vision():
         # Detect objects
         indexes, boxes, confidences, class_ids = detect_objects(frame, model)
 
+        if skip_frames == 0:
+            face_locations, face_names = detect_known_faces(face_detector, known_face_encodings, known_face_names,frame)
+        skip_frames += 1
+        if skip_frames > max_skip_frames:
+            skip_frames = 0
+
         # Draw boxes and labels
         for idx in indexes:
             x, y, w, h = boxes[idx]
             x, y, w, h = int(x), int(y), int(w), int(h)
             label = classes[int(class_ids[idx])]
 
+            if label == "person":
+                for (top, right, bottom, left), name in zip(face_locations, face_names):
+                    if x <= left <= x + w and y <= top <= y + h:
+                        if name != "Unknown":
+                            label = name
+                        break
             # Get the direction
             direction = get_direction(x, y, w, h, frame.shape[1], frame.shape[0])
 
@@ -198,15 +405,18 @@ def run_computer_vision():
 
             # Draw the bounding box and label with direction
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, label_with_direction, (x, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+            cv2.putText(frame, label_with_direction, (x, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
 
             current_time = time.time()
 
+
             # Use the custom speak_label function only if cooldown has passed and the label is 'person'
             if (label not in spoken_labels) or (current_time - spoken_labels[label]) > cooldown_time:
-                t = threading.Timer(1, speak_label, args=(label, direction, engine))
+                t = threading.Timer(1, speak_label, args=(label, direction, engine,stop_event))
                 t.start()
                 spoken_labels[label] = current_time
+
+
 
         # Show the resulting frame
         cv2.imshow("Detection", frame)
@@ -217,6 +427,9 @@ def run_computer_vision():
             break
         elif key == ord('s'):
             cv2.imwrite('image.jpg', frame)
+
+    # Set the stop_event to stop all running threads
+    stop_event.set()
 
     # Release the camera and close the window
     cap.release()
@@ -231,6 +444,7 @@ def computervision1():
     t.start()
     speak("Starting Computer Vision")
 
+
 def grab_frames(cap, frame_queue):
     while True:
         ret, frame = cap.read()
@@ -238,9 +452,8 @@ def grab_frames(cap, frame_queue):
             break
         frame_queue.put(frame)
 
+
 def Camera():
-
-
     head3 = tk.Label(CVFrame1, text="                        Camera Feed Section                            ",
                      fg="White",
                      bg="#424949", font=('Century Gothic', 17), height=1)
@@ -285,10 +498,17 @@ def Camera():
         # start the label update loop in the main thread
         update_label()
 
+
 ########################################################################################
 def process_input():
     while assistant_running:
         query = take_command().lower()
+        if query == "Speech Recognition could not understand audio":
+            ai_response = "Sorry, I could not understand your voice. Please try again."
+            response_label.config(text=textwrap.fill(ai_response, width=100))
+            AssistantFrame.update()
+            speak(ai_response)
+            continue  # skip the rest of the loop and start listening again
         user_label.config(text=query.capitalize())
         AssistantFrame.update()
         if 'hello' in query:
@@ -298,14 +518,26 @@ def process_input():
             speak(ai_response)
             while True:
                 query = take_command().lower()
-                user_label.config(text=query.capitalize())
-                AssistantFrame.update()
-                if 'search' in query:
+                if query == "Speech Recognition could not understand audio":
+                    ai_response = "Sorry, I could not understand your voice. Please try again."
+                    response_label.config(text=textwrap.fill(ai_response, width=100))
+                    AssistantFrame.update()
+                    speak(ai_response)
+                    user_label.config(text=query.capitalize())
+                    AssistantFrame.update()
+                    continue
+                elif 'search' in query:
                     ai_response = "What do you want me to search for?"
                     response_label.config(text=textwrap.fill(ai_response, width=100))
                     AssistantFrame.update()
                     speak(ai_response)
                     query = take_command().lower()
+                    if query == "speech recognition could not understand audio":
+                        ai_response = "Sorry, I could not understand your voice. Please try again."
+                        response_label.config(text=textwrap.fill(ai_response, width=100))
+                        AssistantFrame.update()
+                        speak(ai_response)
+                        continue
                     user_label.config(text=query.capitalize())
                     AssistantFrame.update()
                     try:
@@ -316,6 +548,11 @@ def process_input():
                         query = query.replace("wikipedia", '')
                         results = wikipedia.summary(query, sentences=2)
                         response_label.config(text=textwrap.fill(results, width=100))
+                        AssistantFrame.update()
+                        speak(results)
+                    except wikipedia.exceptions.PageError:
+                        ai_response = f"Sorry, I couldn't find any information about {query} on Wikipedia."
+                        response_label.config(text=textwrap.fill(ai_response, width=100))
                         AssistantFrame.update()
                         speak(ai_response)
                     except wikipedia.exceptions.DisambiguationError as e:
@@ -447,49 +684,64 @@ def process_input():
                     response_label.config(text="Goodbye!")
                     AssistantFrame.update()
                     speak("Goodbye!")
-                    exit(0)
                     response_label.config(text="")
                     user_label.config(text="")
                     AssistantFrame.update()
+                    exit(0)
+
                 else:
                     response_label.config(text="Sorry, I didn't understand.\n Please try again or say 'exit' to quit.")
                     AssistantFrame.update()
-                    ai_response= "Sorry, I didn't understand. Please try again or say 'exit' to quit. "
+                    ai_response = "Sorry, I didn't understand. Please try again or say 'exit' to quit. "
                     speak(ai_response)
             # if user input is not "hello" or "exit/goodbye"
             else:
                 response_label.config(
                     text="Sorry, I didn't understand.\nPlease start the voice assistant again.")
                 speak("Sorry, I didn't understand. Please start the voice assistant again.")
+        elif 'exit' in query or 'goodbye' in query:
+            user_label.config(text=query)
+            response_label.config(text="Goodbye!")
+            AssistantFrame.update()
+            speak("Goodbye!")
+            response_label.config(text="")
+            user_label.config(text="")
+            AssistantFrame.update()
+            exit(0)
         time.sleep(1)
+
 
 def start_assistant():
     global assistant_running
     assistant_running = True
     response_label.config(text="Hello! Nice to meet you!")
     response_label.update()
-    ai_response= "Hello! Nice to meet you!"
+    ai_response = "Hello! Nice to meet you!"
     t = threading.Thread(target=speak, args=(ai_response,))
     t.start()
     t = threading.Thread(target=process_input)
     t.start()
 
+
 def stop_assistant():
     global assistant_running
     assistant_running = False
 
+
 ########################################################################################
 
 def Game1():
-    response= "Start Game Selected"
+    response = "Start Game Selected"
     speak(response)
     t1 = threading.Thread(target=Game)
     t1.start()
+
 
 def display_text_and_speak(text):
     strlabel.config(text=text)
     strlabel.update()
     speak(text)
+
 
 def ask_question_and_get_response(question):
     display_text_and_speak(question)
@@ -501,6 +753,7 @@ def ask_question_and_get_response(question):
         else:
             display_text_and_speak("I didn't catch that. Please say 'yes' or 'no'.")
     return response
+
 
 def Game():
     # display main menu
@@ -532,11 +785,12 @@ def Game():
         user_label1.update()
 
     threading.Thread(target=get_user_input).start()
-    
+
+
 def gamerun():
     global running
     if running:
-    # set initial values for variables
+        # set initial values for variables
 
         strlabel.config(text="After a busy night at the local bar you wake up at 8:30...")
         strlabel.update()
@@ -548,7 +802,7 @@ def gamerun():
         strlabel.config(text="You must get to college on time, lets hope nothing slows you down...")
         strlabel.update()
         speak("You must get to college on time, lets hope nothing slows you down...")
-        
+
     while True:
         totaltime = 0
         timetaken = 0
@@ -556,14 +810,14 @@ def gamerun():
         inv = []
         used = []
 
-        strlabel.config(text="say continue to start game or exit to stop")
+        strlabel.config(text="Say Start to start game or exit to stop")
         strlabel.update()
         speak("say continue to start game or exit to stop")
         response = take_command().lower()
         if response == "exit":
             speak("Exiting game.")
             break
-        elif response != "continue":
+        elif response != "start":
             speak("Invalid response. Please say 'continue' or 'exit'.")
             continue
 
@@ -581,7 +835,7 @@ def gamerun():
             if used[choice] != 101:
                 used[choice] = 101
                 userpl = True
-                #random Choice for selecting the path
+                # random Choice for selecting the path
                 if choice == 1:
                     timetaken = Money()
                 elif choice == 2:
@@ -631,13 +885,16 @@ def gamerun():
             strlabel.update()
             speak("You've finally made it to university, and you were {0} minutes late!".format(totaltime))
 
+
 def stop_function():
     global running
     running = False
     strlabel.config(text=" ")
-    user_label1.config(text = " ")
-    return
+    user_label1.config(text=" ")
     show_frame(MainPage)
+    return
+
+
 
 def vinput():
     # validates inputs so it can't crash and the choice can only be a, b, or c
@@ -652,7 +909,9 @@ def vinput():
 
     return inp
 
+
 def Money():
+    global timetaken
     strlabel.config(text="You're on your way to university when you stumble upon a lost wallet on the ground.")
     strlabel.update()
     speak("You're on your way to university when you stumble upon a lost wallet on the ground.")
@@ -698,7 +957,9 @@ def Money():
         timetaken = 15
     return timetaken
 
+
 def river():
+    global timetaken
     strlabel.config(text="You come across a wide river blocking your path.")
     strlabel.update()
     speak("You come across a wide river blocking your path.")
@@ -725,7 +986,8 @@ def river():
         #
         timetaken = 25
     elif inp == "number two":
-        strlabel.config(text="You Managed to steal the boat and cross the river in time \n but the police will be looking for you! ")
+        strlabel.config(
+            text="You Managed to steal the boat and cross the river in time \n but the police will be looking for you! ")
         strlabel.update()
         speak("You Managed to steal the boat and cross the river in time but the police will be looking for you!")
         #
@@ -738,13 +1000,15 @@ def river():
         timetaken = 20
     return timetaken
 
+
 def AppleStore():
+    global timetaken, timetaken
     strlabel.config(text="As you approach the AppleStore, you hear loud noises and see a commotion.")
     strlabel.update()
     speak("As you approach the AppleStore, you hear loud noises and see a commotion.")
-    strlabel.config(text="You notice people breaking into the store and taking iPads, iPhones, and Macbooks.")
+    strlabel.config(text="You notice people breaking into the store and taking iPads, iPhones, and Mac-books.")
     strlabel.update()
-    speak("You notice people breaking into the store and taking iPads, iPhones, and Macbooks.")
+    speak("You notice people breaking into the store and taking iPads, iPhones, and Mac-books.")
     strlabel.config(text="What do you do?")
     strlabel.update()
     speak("What do you do?")
@@ -789,7 +1053,9 @@ def AppleStore():
         timetaken = 0
     return timetaken
 
+
 def lost_child():
+    global timetaken
     strlabel.config(text="You are walking in the park when you notice a lost child crying")
     strlabel.update()
     speak("You are walking in the park when you notice a lost child crying")
@@ -824,6 +1090,7 @@ def lost_child():
         speak("Shame on you! You should always help someone in need")
         timetaken = 0
     return timetaken
+
 
 def kidnapping():
     strlabel.config(text="You're walking to university when you suddenly hear footsteps behind you")
@@ -880,7 +1147,9 @@ def kidnapping():
     timetaken = 4320
     return timetaken
 
+
 def Kitten():
+    global timetaken
     strlabel.config(text="As you walk, you hear a soft meowing sound coming from behind a nearby tree.")
     strlabel.update()
     speak("As you walk, you hear a soft meowing sound coming from behind a nearby tree.")
@@ -922,7 +1191,9 @@ def Kitten():
         speak("Good luck with your day at university!")
     return timetaken
 
+
 def prisoner():
+    global timetaken
     strlabel.config(text="As you walk down the street, you notice a group of people walking towards you.")
     strlabel.update()
     speak("As you walk down the street, you notice a group of people walking towards you.")
@@ -968,9 +1239,11 @@ def prisoner():
         timetaken = 0
     return timetaken
 
+
 def dinosaur():
-    timetaken=0
-    strlabel.config(text="You are on your way and come across a drugged grizzly bear \n which escaped from the local zoo.")
+    timetaken = 0
+    strlabel.config(
+        text="You are on your way and come across a drugged grizzly bear \n which escaped from the local zoo.")
     strlabel.update()
     speak("You are on your way and come across a drugged grizzly bear which escaped from the local zoo.")
     strlabel.config(text="It stands on its hind legs and growls at you menacingly.")
@@ -1035,29 +1308,38 @@ def clear1():
     stop_assistant()
     show_frame(MainPage)
 
+
 def contact():
     mess._show(title='Contact us', message="Please contact us at : himalpanta@gmail.com ")
     engine.speak("Please Contact us at : himalpanta@gmail.com")
+
 
 def confirm2():
     answer = askyesno(title='Quit', message='Are you sure that you want to Quit?')
     if answer:
         window.destroy()
 
+
 def show_frame(frame):
     t = threading.Thread(target=frame.tkraise())
     t.start()
+    update_time()
+    tick()
+
 
 def increase_size(event):
     event.widget.config(font=('Quantum Mechanics', 13, 'bold'))
 
+
 def decrease_size(event):
     event.widget.config(font=('Quantum Mechanics', 12))
+
 
 def update_time():
     current_time = time.strftime("%I:%M:%S %p")
     clock_label.configure(text=current_time)
     MainPage.after(1000, update_time)
+
 
 def GamePage1():
     show_frame(GamePage)
@@ -1065,15 +1347,17 @@ def GamePage1():
     t = threading.Thread(target=speak1, args=(response,))
     t.start()
     strlabel.config(text="Press Start Game Button ")
+    user_label1.config(text="")
+
 
 def ComputervisionPage1():
-    
     response = " Computer Vision Page Selected "
     t = threading.Thread(target=speak1, args=(response,))
     t.start()
     show_frame(ComputerVisionPage)
     t1 = threading.Thread(target=Camera)
     t1.start()
+
 
 def AssistantPage1():
     show_frame(AssistantPage)
@@ -1082,11 +1366,15 @@ def AssistantPage1():
     t.start()
     response_label.config(text="Press Start Assistance Button ")
 
+
 def Back_btn():
     show_frame(MainPage)
     response = " Back Button Selected "
     t = threading.Thread(target=speak1, args=(response,))
     t.start()
+    update_time()
+    tick()
+
 
 def Back_btn1():
     show_frame(MainPage)
@@ -1094,6 +1382,9 @@ def Back_btn1():
     t = threading.Thread(target=speak1, args=(response,))
     t.start()
     stop_function()
+    update_time()
+    tick()
+
 
 ################################ USER INTERFACE DESIGN ##################################
 
@@ -1153,13 +1444,6 @@ datef = tk.Label(MainPage, text="" + day + "-" + mont[month] + "-" + year + "", 
 datef.pack()
 datef.place(x=80, y=80)
 
-
-clock_label = tk.Label(MainPage, fg="white", bg="#004aad", height=1, font=('Century Gothic', 25))
-clock_label.pack()
-clock_label.place(x=1000, y=80)
-
-update_time()
-
 #################################--------------Computer Vision PAGE------------------############################################################
 ComputerVisionPage = tk.Frame(window, width=1366, height=768)
 ComputerVisionPage.grid(row=0, column=0, stick='nsew')
@@ -1167,7 +1451,7 @@ background_label = tk.Label(ComputerVisionPage, image=filename1)
 background_label.place(x=0, y=0, relwidth=1, relheight=1)
 
 CVFrame = tk.Frame(ComputerVisionPage, bg="white")
-CVFrame.place(relx=0.2, rely=0.32, relwidth=0.25, relheight=0.40)
+CVFrame.place(relx=0.2, rely=0.32, relwidth=0.25, relheight=0.50)
 
 CVFrame1 = tk.Frame(ComputerVisionPage, bg="#D0D3D4")
 CVFrame1.place(relx=0.53, rely=0.22, relwidth=0.38, relheight=0.75)
@@ -1190,6 +1474,25 @@ clock_label.pack()
 clock_label.place(x=1000, y=80)
 
 update_time()
+
+AddFace = tk.Button(CVFrame, text="➔ Add Face", command=add_new_face, fg="white", bg="#004aad",
+                    width=24, height=1, activebackground="white", font=('Century Gothic', 15))
+AddFace.place(x=15, y=150)
+
+DeleteFace = tk.Button(CVFrame, text="➔ Delete Face", command=lambda: delete_face(simpledialog.askstring("Input", "Enter the name of the person to delete:",
+                                   parent=ComputerVisionPage)), fg="white", bg="#004aad",
+                    width=24, height=1, activebackground="white", font=('Century Gothic', 15))
+DeleteFace.place(x=15, y=270)
+
+UpdateFace = tk.Button(CVFrame, text="➔ Update Known Face", command=update_known_face_button, fg="white", bg="#004aad",
+                       width=24, height=1, activebackground="white", font=('Century Gothic', 15))
+UpdateFace.place(x=15, y=210)
+
+delete_all_known_faces_button = tk.Button(
+    CVFrame, text="➔ Delete All Known Faces", command=lambda: delete_all_known_faces("known_faces.pkl"),
+    fg="white", bg="black", width=24, height=1, activebackground="white", font=('Century Gothic', 15)
+)
+delete_all_known_faces_button.place(x=15, y=330)
 
 back = tk.Button(ComputerVisionPage, text="Back", command=lambda: Back_btn(), fg="white", bg="#404040",
                  width=20, height=1, activebackground="white", font=('Century Gothic', 15))
@@ -1256,12 +1559,12 @@ user_Name.pack()
 user_Name.place(x=270, y=555)
 
 user_label1 = Label(gameframe, text="", font=('Century Gothic', 14), fg='black', height=2, width=65, wraplength=500,
-                   anchor="w", padx=20)
+                    anchor="w", padx=20)
 user_label1.pack()
 user_label1.place(x=50, y=400)
 
 strlabel = Label(gameframe, text="Press Start Game Button", font=('Century Gothic', 14), fg='Black',
-                       bg='white', height=10, width=100, wraplength=500, anchor="w")
+                 bg='white', height=10, width=100, wraplength=500, anchor="w")
 strlabel.pack()
 strlabel.place(x=200, y=50)
 
@@ -1283,7 +1586,6 @@ tick()
 back = tk.Button(GamePage, text="Back", command=lambda: Back_btn1(), fg="white", bg="#404040", width=20,
                  height=1, activebackground="white", font=('Century Gothic', 15), borderwidth=0)
 back.place(x=950, y=700)
-
 
 ########################################################################################################################
 show_frame(MainPage)
