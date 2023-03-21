@@ -52,6 +52,8 @@ Features included are:
 Here are the major tools used to build this project:
 
 * YOLOV5
+* MTCNN
+* face_recognition
 * PYTTsX3
 * Tkinter for GUI
 
@@ -67,6 +69,18 @@ You need to import the following modules
 * OpenCV
 ```sh
 pip install opencv-python
+```
+* YOLOV5
+```sh
+pip install yolov5
+```
+* face_recognition
+```sh
+pip install face_recognition
+```
+* MTCNN
+```sh
+pip install mtcnn
 ```
 * Numpy
 ```sh
