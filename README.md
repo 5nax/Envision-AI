@@ -90,6 +90,10 @@ pip install numpy
 ```sh
 https://pytorch.org/get-started/locally/- Select the options for your GPU with CUDA version to generate a install command
 ```
+* Speech Recognition
+```sh
+pip install speech_recognition
+```
 * tkinter
 ```sh
 pip install tkinter
