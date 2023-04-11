@@ -52,6 +52,8 @@ Features included are:
 Here are the major tools used to build this project:
 
 * YOLOV5
+* MTCNN
+* face_recognition
 * PYTTsX3
 * Tkinter for GUI
 
@@ -68,6 +70,18 @@ You need to import the following modules
 ```sh
 pip install opencv-python
 ```
+* YOLOV5
+```sh
+pip install yolov5
+```
+* face_recognition
+```sh
+pip install face_recognition
+```
+* MTCNN
+```sh
+pip install mtcnn
+```
 * Numpy
 ```sh
 pip install numpy
@@ -75,6 +89,10 @@ pip install numpy
 * Pytorch
 ```sh
 https://pytorch.org/get-started/locally/- Select the options for your GPU with CUDA version to generate a install command
+```
+* Speech Recognition
+```sh
+pip install speech_recognition
 ```
 * tkinter
 ```sh
