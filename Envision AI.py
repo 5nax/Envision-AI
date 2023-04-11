@@ -26,6 +26,9 @@ import queue
 import face_recognition
 import pickle
 from mtcnn import MTCNN
+from tkinter import filedialog
+import shutil
+import numpy as np
 ###########################################################################################
 
 language = 'en'
@@ -152,6 +155,32 @@ def capture_image_and_save(name):
     cap.release()
     cv2.destroyAllWindows()
 
+def add_new_face_from_image():
+    # Get the name for the new face
+    name = simpledialog.askstring("Input", "Enter the name of the person:",
+                                   parent=ComputerVisionPage)
+    if name:
+        # Open a file dialog to select the image
+        image_path = filedialog.askopenfilename(title="Select the image of the person",
+                                                filetypes=[("Image files", "*.jpg;*.jpeg;*.png")])
+
+        # Check if an image is selected
+        if not image_path:
+            messagebox.showerror("Error", "No image selected.")
+            return
+
+        # Save a copy of the image with the given name
+        shutil.copy(image_path, f"{name}.jpg")
+
+        # Encode the face and update the known faces
+        new_face_encoding, _ = encode_faces([f"{name}.jpg"], [name])
+        known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
+        known_face_encodings.extend(new_face_encoding)
+        known_face_names.extend([name])
+
+        # Save the updated known faces
+        save_known_faces(known_face_encodings, known_face_names, "known_faces.pkl")
+        messagebox.showinfo("Success", f"{name} has been added successfully!")
 
 def encode_faces(image_paths, names):
     known_face_encodings = []
@@ -314,6 +343,11 @@ def get_direction(x, y, w, h, width, height):
         direction += " middle"
 
     return direction
+def face_detection_thread(face_detector, known_face_encodings, known_face_names, frame_queue, face_info_queue, exit_event):
+    while not exit_event.is_set():
+        frame = frame_queue.get()
+        face_locations, face_names = detect_known_faces(face_detector, known_face_encodings, known_face_names, frame)
+        face_info_queue.put((face_locations, face_names))
 
 ######################################## Computer Vision Detection ###################################################
 def detect_objects(frame, model):
@@ -339,109 +373,135 @@ def detect_objects(frame, model):
     return indexes, boxes, confidences, class_ids
 
 
+def apply_night_vision(frame):
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    equalized_frame = clahe.apply(gray_frame)
+
+    return cv2.cvtColor(equalized_frame, cv2.COLOR_GRAY2BGR)
+
+def is_frame_too_dark(frame, threshold=30):
+    mean_brightness = np.mean(frame)
+    return mean_brightness < threshold
+
 def run_computer_vision():
-    # Replace the following with your custom Label and placement code
     global face_locations, face_names
     lmain = tk.Label(CVFrame1,
                      text="Computer Vision Started \n Press the key 'Q' on your keyboard to stop\n  Computer Vision",
                      font=('Century Gothic', 14), bg="#D0D3D4", height=30, width=50)
     lmain.place(relx=0, rely=0)
     face_detector = MTCNN()
-    # Load classes
+
     with open("coco.names", "r") as f:
         classes = [line.strip() for line in f.readlines()]
 
-    # Initialize YOLOv5 (replace 'yolov5s.pt' with the downloaded model)
     device = torch.device("cuda:0")
-
     model = YOLOv5('\\yolov5x.pt', device=device)
 
-    # Initialize camera
     cap = cv2.VideoCapture(0)
-    last_speak_time = 0
     cooldown_time = 4
-    spoken_labels = {}  # cooldown in seconds
+    spoken_labels = {}
 
     known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
     skip_frames = 0
-    max_skip_frames = 5
+    max_skip_frames = 10
     stop_event = threading.Event()
+
+    frame_queue = queue.Queue()
+    face_info_queue = queue.Queue()
+    face_detection_exit_event = threading.Event()
+    face_detection_thread_obj = threading.Thread(target=face_detection_thread,
+                                                 args=(
+                                                     face_detector, known_face_encodings, known_face_names, frame_queue,
+                                                     face_info_queue, face_detection_exit_event),
+                                                 daemon=True)
+    face_detection_thread_obj.start()
+
+    last_confidence_update_time = time.time()
+
     while True:
-        # Read from camera
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Resize the frame
         scale = 0.5
         frame = cv2.resize(frame, (int(frame.shape[1] * scale), int(frame.shape[0] * scale)))
 
-        # Detect objects
+        if is_frame_too_dark(frame):
+            frame = apply_night_vision(frame)
+
         indexes, boxes, confidences, class_ids = detect_objects(frame, model)
+        frame_queue.put(frame.copy())
+
+        if not face_info_queue.empty():
+            face_locations, face_names = face_info_queue.get()
 
         if skip_frames == 0:
-            face_locations, face_names = detect_known_faces(face_detector, known_face_encodings, known_face_names,frame)
+            face_locations, face_names = detect_known_faces(face_detector, known_face_encodings, known_face_names,
+                                                            frame)
         skip_frames += 1
         if skip_frames > max_skip_frames:
             skip_frames = 0
 
-        # Draw boxes and labels
         for idx in indexes:
             x, y, w, h = boxes[idx]
             x, y, w, h = int(x), int(y), int(w), int(h)
             label = classes[int(class_ids[idx])]
 
+            current_time = time.time()
+            if current_time - last_confidence_update_time >= 1:
+                confidence = confidences[idx] * 100
+                last_confidence_update_time = current_time
+
             if label == "person":
+                found_recognized_face = False
                 for (top, right, bottom, left), name in zip(face_locations, face_names):
                     if x <= left <= x + w and y <= top <= y + h:
                         if name != "Unknown":
                             label = name
+                            found_recognized_face = True
                         break
-            # Get the direction
+
             direction = get_direction(x, y, w, h, frame.shape[1], frame.shape[0])
 
-            # Concatenate label and direction
-            label_with_direction = f"{label} ({direction})"
+            if label == "person" and found_recognized_face:
+                label_with_direction_confidence = f"{label} ({direction}) {confidence:.2f}%"
+            else:
+                label_with_direction_confidence = f"{label} ({direction}) {confidence:.2f}%"
 
-            # Draw the bounding box and label with direction
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, label_with_direction, (x, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+            cv2.putText(frame,label_with_direction_confidence, (x, y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (0, 0, 255), 2)
 
-            current_time = time.time()
+        if (label not in spoken_labels) or (current_time - spoken_labels[label]) > cooldown_time:
+            threading.Thread(target=speak_label, args=(label, direction, engine, stop_event), daemon=True).start()
+            spoken_labels[label] = current_time
 
+        display_scale = 1.2
+        display_frame = cv2.resize(frame, (int(frame.shape[1] * display_scale), int(frame.shape[0] * display_scale)))
 
-            # Use the custom speak_label function only if cooldown has passed and the label is 'person'
-            if (label not in spoken_labels) or (current_time - spoken_labels[label]) > cooldown_time:
-                t = threading.Timer(1, speak_label, args=(label, direction, engine,stop_event))
-                t.start()
-                spoken_labels[label] = current_time
+        cv2.imshow("Detection", display_frame)
 
-
-
-        # Show the resulting frame
-        cv2.imshow("Detection", frame)
-
-        # Check for key presses
         key = cv2.waitKey(1)
         if key == ord('q'):
             break
         elif key == ord('s'):
             cv2.imwrite('image.jpg', frame)
 
-    # Set the stop_event to stop all running threads
-    stop_event.set()
+    face_detection_exit_event.set()
 
-    # Release the camera and close the window
     cap.release()
     cv2.destroyAllWindows()
     Camera()
 
 
+
 def computervision1():
     global running
     running = True
-    t = threading.Thread(target=run_computer_vision)
-    t.start()
+    computer_vision_thread = threading.Thread(target=run_computer_vision, daemon=True)
+    computer_vision_thread.start()
     speak("Starting Computer Vision")
 
 
@@ -461,7 +521,8 @@ def Camera():
 
     # Capture from camera
     cap = cv2.VideoCapture(0)
-
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     if not cap.isOpened():
         # Create a label in the frame to display "No camera connected"
         lmain = tk.Label(CVFrame1, text="No camera connected.. \n Connect a camera to start computer vision",
@@ -1474,10 +1535,24 @@ clock_label.pack()
 clock_label.place(x=1000, y=80)
 
 update_time()
+def on_hover(event):
+    # Create a popup menu with two options
+    popup_menu = tk.Menu(ComputerVisionPage, tearoff=0)
+    popup_menu.configure(bg="#004aad", fg="white", font=('Century Gothic', 15))
+    popup_menu.add_command(label="Add new face Via Webcam", command=add_new_face )
+    popup_menu.add_command(label="Add new face Via File", command=add_new_face_from_image)
 
-AddFace = tk.Button(CVFrame, text="➔ Add Face", command=add_new_face, fg="white", bg="#004aad",
+    # Display the popup menu
+    try:
+        popup_menu.tk_popup(event.x_root, event.y_root)
+    finally:
+        popup_menu.bind("<Leave>", lambda _: popup_menu.unpost())
+
+
+AddFace = tk.Button(CVFrame, text="➔ Add Face", fg="white", bg="#004aad",command=None,
                     width=24, height=1, activebackground="white", font=('Century Gothic', 15))
 AddFace.place(x=15, y=150)
+AddFace.bind("<Enter>", on_hover)
 
 DeleteFace = tk.Button(CVFrame, text="➔ Delete Face", command=lambda: delete_face(simpledialog.askstring("Input", "Enter the name of the person to delete:",
                                    parent=ComputerVisionPage)), fg="white", bg="#004aad",
@@ -1489,10 +1564,10 @@ UpdateFace = tk.Button(CVFrame, text="➔ Update Known Face", command=update_kno
 UpdateFace.place(x=15, y=210)
 
 delete_all_known_faces_button = tk.Button(
-    CVFrame, text="➔ Delete All Known Faces", command=lambda: delete_all_known_faces("known_faces.pkl"),
+    ComputerVisionPage, text="➔ Delete All Known Faces", command=lambda: delete_all_known_faces("known_faces.pkl"),
     fg="white", bg="black", width=24, height=1, activebackground="white", font=('Century Gothic', 15)
 )
-delete_all_known_faces_button.place(x=15, y=330)
+delete_all_known_faces_button.place(x=15, y=680)
 
 back = tk.Button(ComputerVisionPage, text="Back", command=lambda: Back_btn(), fg="white", bg="#404040",
                  width=20, height=1, activebackground="white", font=('Century Gothic', 15))
