@@ -37,22 +37,22 @@
 
 ## About The Project
 
-![image](https://user-images.githubusercontent.com/97379931/225304945-ab4e4457-ee42-4e6a-ab00-cd40f99d492a.png)
+![image](https://user-images.githubusercontent.com/97379931/231550160-66a69167-5290-4ba5-a42f-6f29c7d73330.png)
 
 
 Envision AI is an assistive technology app that leverages the power of artificial intelligence to help blind and visually impaired individuals with daily tasks.
 
 
 Features included are:
-* Computer Vision: With YOLOv5 object detection- It provides a very fast and highly accurate result. Uses PYTTsx3 module for TTS conversion
-* AI Assistant: A simple ai chat bot which can provide search results, tell you the weather…etc.
-* Game: A simple game which takes voice as input.
+* Computer Vision: With YOLOv5 object detection, MTCNN Face Recognition and CLAHE Algorithms - It provides a very fast and highly accurate result. Uses PYTTsx3 module for TTS conversion
+* AI Assistant: A simple AI chat bot which can provide search results, tell you the weather…etc.
 
 
 Here are the major tools used to build this project:
 
 * YOLOV5
 * MTCNN
+* CLAHE
 * face_recognition
 * PYTTsX3
 * Tkinter for GUI
