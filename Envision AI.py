@@ -1251,6 +1251,6 @@ back2.place(relx=0.1, rely=0.9)
 
 
 ########################################################################################################################
-show_frame(ComputerVisionPage)
+show_frame(MainPage)
 
 window.mainloop()
