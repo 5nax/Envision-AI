@@ -9,6 +9,7 @@ import webbrowser
 from tkinter import *
 from tkinter import messagebox as mess
 from tkinter.messagebox import askyesno
+import tkinter.ttk as ttk
 import cv2
 import pyttsx3
 import requests
@@ -16,9 +17,8 @@ import speech_recognition as sr
 import wikipedia
 from PIL import Image, ImageFilter
 from PIL import ImageTk
-import random
 import os
-from tkinter import simpledialog, messagebox
+from tkinter import messagebox
 from yolov5 import YOLOv5
 import torch
 from torchvision.ops import nms
@@ -29,6 +29,10 @@ from mtcnn import MTCNN
 from tkinter import filedialog
 import shutil
 import numpy as np
+import glob
+import subprocess
+import platform
+
 ###########################################################################################
 
 language = 'en'
@@ -46,6 +50,8 @@ engine.setProperty('rate', 130)
 assistant_running = False
 
 running = True
+
+camera_initialized = False
 
 ts = time.time()
 
@@ -97,8 +103,6 @@ def take_command():
     with sr.Microphone() as source:
         user_label.config(text="Listening...")
         user_label.update()
-        user_label1.config(text="Listening...")
-        user_label1.update()
         print("Listening...")
         r.pause_threshold = 1
         audio = r.listen(source)
@@ -106,8 +110,6 @@ def take_command():
         print("Recognizing...")
         user_label.config(text="Recognizing...")
         user_label.update()
-        user_label1.config(text="Recognizing...")
-        user_label1.update()
         query = r.recognize_google(audio, language='en-us')
         print(f"User said: {query}\n")
     except Exception as e:
@@ -118,25 +120,17 @@ def take_command():
 
 ####################################### Computer Vision Person Register ####################################################
 
-def add_new_face():
-
-    # Get the name for the new face
-    name = simpledialog.askstring("Input", "Enter the name of the person:",
-                                   parent=ComputerVisionPage)
+def add_new_face(name):
     if name:
-        # Capture the image and save it with the given name
-        capture_image_and_save(name)
+        if capture_image_and_save(name):
+            new_face_encoding, _ = encode_faces([f"{name}.jpg"], [name])
+            known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
+            known_face_encodings.extend(new_face_encoding)
+            known_face_names.extend([name])
 
-        # Encode the face and update the known faces
-        new_face_encoding, _ = encode_faces([f"{name}.jpg"], [name])
-        known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
-        known_face_encodings.extend(new_face_encoding)
-        known_face_names.extend([name])
-
-        # Save the updated known faces
-        save_known_faces(known_face_encodings, known_face_names, "known_faces.pkl")
-        messagebox.showinfo("Success", f"{name} has been added successfully!")
-
+            save_known_faces(known_face_encodings, known_face_names, "known_faces.pkl")
+            messagebox.showinfo("Success", f"{name} has been added successfully!")
+            thumbnail_treeview.update_list()
 
 def capture_image_and_save(name):
     cap = cv2.VideoCapture(0)
@@ -147,40 +141,53 @@ def capture_image_and_save(name):
         key = cv2.waitKey(1)
 
         if key == ord('s'):
-            cv2.imwrite(f"{name}.jpg", frame)
-            break
+            temp_image_path = 'temp_image.jpg'
+            cv2.imwrite(temp_image_path, frame)
+            temp_image = face_recognition.load_image_file(temp_image_path)
+            face_encodings = face_recognition.face_encodings(temp_image)
+
+            if len(face_encodings) > 0:
+                cv2.imwrite(f"{name}.jpg", frame)
+                os.remove(temp_image_path)
+                break
+            else:
+                messagebox.showerror("Error", "No face detected in the captured image. Please try again.")
+                os.remove(temp_image_path)
+                continue
         elif key == ord('q'):
-            break
+            cap.release()
+            cv2.destroyAllWindows()
+            return False
 
     cap.release()
     cv2.destroyAllWindows()
+    return True
 
-def add_new_face_from_image():
-    # Get the name for the new face
-    name = simpledialog.askstring("Input", "Enter the name of the person:",
-                                   parent=ComputerVisionPage)
+
+def add_new_face_from_image(name):
     if name:
-        # Open a file dialog to select the image
         image_path = filedialog.askopenfilename(title="Select the image of the person",
                                                 filetypes=[("Image files", "*.jpg;*.jpeg;*.png")])
 
-        # Check if an image is selected
         if not image_path:
             messagebox.showerror("Error", "No image selected.")
             return
 
-        # Save a copy of the image with the given name
-        shutil.copy(image_path, f"{name}.jpg")
+        temp_image = face_recognition.load_image_file(image_path)
+        face_encodings = face_recognition.face_encodings(temp_image)
 
-        # Encode the face and update the known faces
-        new_face_encoding, _ = encode_faces([f"{name}.jpg"], [name])
-        known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
-        known_face_encodings.extend(new_face_encoding)
-        known_face_names.extend([name])
+        if len(face_encodings) > 0:
+            shutil.copy(image_path, f"{name}.jpg")
+            new_face_encoding, _ = encode_faces([f"{name}.jpg"], [name])
+            known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
+            known_face_encodings.extend(new_face_encoding)
+            known_face_names.extend([name])
 
-        # Save the updated known faces
-        save_known_faces(known_face_encodings, known_face_names, "known_faces.pkl")
-        messagebox.showinfo("Success", f"{name} has been added successfully!")
+            save_known_faces(known_face_encodings, known_face_names, "known_faces.pkl")
+            messagebox.showinfo("Success", f"{name} has been added successfully!")
+            thumbnail_treeview.update_list()
+        else:
+            messagebox.showerror("Error", "No face detected in the selected image. Please try another image.")
 
 def encode_faces(image_paths, names):
     known_face_encodings = []
@@ -212,11 +219,21 @@ def load_known_faces(filename):
         data = pickle.load(f)
     return data["encodings"], data["names"]
 
+def load_known_faces1():
+    global known_faces
+    if os.path.exists("known_faces.pkl"):
+        with open("known_faces.pkl", "rb") as f:
+            known_faces = pickle.load(f)
+    else:
+        known_faces = {}
+
+load_known_faces1()
 
 known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
 
 
-def update_known_face(name, known_face_encodings, known_face_names, filename):
+def update_known_face(name, filename):
+    known_face_encodings, known_face_names = load_known_faces(filename)
     cap = cv2.VideoCapture(0)
 
     while True:
@@ -228,7 +245,6 @@ def update_known_face(name, known_face_encodings, known_face_names, filename):
         key = cv2.waitKey(1)
 
         if key == ord('s'):
-            # Save the current frame as a temporary image
             cv2.imwrite('temp_image.jpg', frame)
             break
         elif key == ord('q'):
@@ -237,33 +253,39 @@ def update_known_face(name, known_face_encodings, known_face_names, filename):
     cap.release()
     cv2.destroyAllWindows()
 
-    # Encode the face from the temporary image
     temp_image_path = 'temp_image.jpg'
-    new_face_encoding = face_recognition.face_encodings(face_recognition.load_image_file(temp_image_path))[0]
+    temp_image = face_recognition.load_image_file(temp_image_path)
+    face_encodings = face_recognition.face_encodings(temp_image)
 
-    # Find the index of the existing face encoding with the provided name
-    face_index = known_face_names.index(name)
+    if len(face_encodings) > 0:
+        new_face_encoding = face_encodings[0]
 
-    # Replace the existing encoding and name in the lists
-    known_face_encodings[face_index] = new_face_encoding
+        face_index = known_face_names.index(name)
+        known_face_encodings[face_index] = new_face_encoding
 
-    # Save the updated data to the file
-    save_known_faces(known_face_encodings, known_face_names, filename)
+        save_known_faces(known_face_encodings, known_face_names, filename)
+        os.remove(temp_image_path)
+        messagebox.showinfo("Success", f"{name} has been updated successfully!")
+    else:
+        messagebox.showerror("Error", "No face detected in the captured image. Please try again.")
+        os.remove(temp_image_path)
 
-    # Remove the temporary image file
-    os.remove(temp_image_path)
-    messagebox.showinfo("Success", f"{name} has been updated successfully!")
-
-
-def update_known_face_button():
-    known_face_encodings, known_face_names
-    name = simpledialog.askstring("Update Known Face", "Enter the name of the person whose image you want to update:")
+def update_known_face_button(name):
+    global known_face_encodings, known_face_names
     if name is not None:
         if name in known_face_names:
-            update_known_face(name, known_face_encodings, known_face_names, "known_faces.pkl")
+            update_known_face(name, "known_faces.pkl")
+            known_face_encodings, known_face_names = load_known_faces("known_faces.pkl")
             messagebox.showinfo("Update Known Face", f"Updated the image for {name}.")
         else:
             messagebox.showerror("Update Known Face", f"No saved image found for {name}.")
+
+
+def load_known_faces2(pkl_file):
+    with open(pkl_file, "rb") as f:
+        known_faces = pickle.load(f)
+    known_face_encodings, known_face_names = zip(*known_faces)
+    return known_face_encodings, known_face_names
 
 
 def detect_known_faces(face_detector, known_face_encodings, known_face_names, frame):
@@ -343,11 +365,6 @@ def get_direction(x, y, w, h, width, height):
         direction += " middle"
 
     return direction
-def face_detection_thread(face_detector, known_face_encodings, known_face_names, frame_queue, face_info_queue, exit_event):
-    while not exit_event.is_set():
-        frame = frame_queue.get()
-        face_locations, face_names = detect_known_faces(face_detector, known_face_encodings, known_face_names, frame)
-        face_info_queue.put((face_locations, face_names))
 
 ######################################## Computer Vision Detection ###################################################
 def detect_objects(frame, model):
@@ -371,6 +388,12 @@ def detect_objects(frame, model):
 
     indexes = nms_indices.tolist()
     return indexes, boxes, confidences, class_ids
+
+def face_detection_thread(face_detector, known_face_encodings, known_face_names, frame_queue, face_info_queue, exit_event):
+    while not exit_event.is_set():
+        frame = frame_queue.get()
+        face_locations, face_names = detect_known_faces(face_detector, known_face_encodings, known_face_names, frame)
+        face_info_queue.put((face_locations, face_names))
 
 
 def apply_night_vision(frame):
@@ -496,7 +519,6 @@ def run_computer_vision():
     Camera()
 
 
-
 def computervision1():
     global running
     running = True
@@ -513,7 +535,11 @@ def grab_frames(cap, frame_queue):
         frame_queue.put(frame)
 
 
+
 def Camera():
+    global camera_initialized
+    if camera_initialized:
+        return
     head3 = tk.Label(CVFrame1, text="                        Camera Feed Section                            ",
                      fg="White",
                      bg="#424949", font=('Century Gothic', 17), height=1)
@@ -558,6 +584,7 @@ def Camera():
 
         # start the label update loop in the main thread
         update_label()
+        camera_initialized = True
 
 
 ########################################################################################
@@ -685,6 +712,33 @@ def process_input():
                     AssistantFrame.update()
                     speak(ai_response)
                     webbrowser.open("https://www.youtube.com")
+
+                elif 'tell me a joke' in query:
+                    ai_response = "Why did the scarecrow win an award? Because he was outstanding in his field!"
+                    response_label.config(text=textwrap.fill(ai_response, width=100))
+                    AssistantFrame.update()
+                    speak(ai_response)
+
+                elif 'tell me the time' in query or 'what is the time' in query:
+                    current_time = datetime.datetime.now().strftime("%I:%M %p")
+                    ai_response = f"The current time is {current_time}."
+                    response_label.config(text=textwrap.fill(ai_response, width=100))
+                    AssistantFrame.update()
+                    speak(ai_response)
+
+                elif 'tell me a fun fact' in query:
+                    ai_response = "Did you know that the word 'robot' comes from the Czech word 'robota', which means 'forced labor'?"
+                    response_label.config(text=textwrap.fill(ai_response, width=100))
+                    AssistantFrame.update()
+                    speak(ai_response)
+
+                elif 'open gmail' in query:
+                    ai_response = "Opening Gmail."
+                    response_label.config(text=textwrap.fill(ai_response, width=100))
+                    AssistantFrame.update()
+                    speak(ai_response)
+                    webbrowser.open("https://mail.google.com")
+
                 elif 'weather' in query:
                     api_key = "e22091f5fcb17ba19fc9aa2d7c6a3a73"  # replace with your OpenWeatherMap API key
                     base_url = "https://api.openweathermap.org/data/2.5/weather?"
@@ -749,7 +803,6 @@ def process_input():
                     user_label.config(text="")
                     AssistantFrame.update()
                     exit(0)
-
                 else:
                     response_label.config(text="Sorry, I didn't understand.\n Please try again or say 'exit' to quit.")
                     AssistantFrame.update()
@@ -788,577 +841,6 @@ def stop_assistant():
     global assistant_running
     assistant_running = False
 
-
-########################################################################################
-
-def Game1():
-    response = "Start Game Selected"
-    speak(response)
-    t1 = threading.Thread(target=Game)
-    t1.start()
-
-
-def display_text_and_speak(text):
-    strlabel.config(text=text)
-    strlabel.update()
-    speak(text)
-
-
-def ask_question_and_get_response(question):
-    display_text_and_speak(question)
-    while True:
-        response = take_command().lower()
-        user_label1.config(text=response)
-        if response in ["yes", "no", "exit"]:
-            break
-        else:
-            display_text_and_speak("I didn't catch that. Please say 'yes' or 'no'.")
-    return response
-
-
-def Game():
-    # display main menu
-    display_text_and_speak("Welcome to Get to the University Game!")
-    display_text_and_speak("The game where you try to get in on time to your lessons!")
-
-    def get_user_input():
-        while True:
-            play = ask_question_and_get_response("Would you like to play?")
-            if play == "yes":
-                display_text_and_speak("Let's go!")
-                time.sleep(1)
-                gamerun()
-                again = ask_question_and_get_response("Do you want to play again?")
-                if again == "no":
-                    display_text_and_speak("Thanks for playing!")
-                    break
-            elif play == "no" or play == "exit":
-                display_text_and_speak("Sure! Quitting the game")
-                stop_function()
-                strlabel.config(text="Press Start Game Button")
-                strlabel.update()
-                return
-
-        # Reset the GUI labels
-        user_label1.config(text="")
-        strlabel.config(text="")
-        strlabel.update()
-        user_label1.update()
-
-    threading.Thread(target=get_user_input).start()
-
-
-def gamerun():
-    global running
-    if running:
-        # set initial values for variables
-
-        strlabel.config(text="After a busy night at the local bar you wake up at 8:30...")
-        strlabel.update()
-        speak("After a busy night at the local bar you wake up at 8:30...")
-        strlabel.config(text="But.. YOUR COLLEGE IS AT 9 AM !!")
-        strlabel.update()
-        speak("But.. YOUR COLLEGE IS AT 9 AM !!")
-
-        strlabel.config(text="You must get to college on time, lets hope nothing slows you down...")
-        strlabel.update()
-        speak("You must get to college on time, lets hope nothing slows you down...")
-
-    while True:
-        totaltime = 0
-        timetaken = 0
-        count = 0
-        inv = []
-        used = []
-
-        strlabel.config(text="Say Start to start game or exit to stop")
-        strlabel.update()
-        speak("say continue to start game or exit to stop")
-        response = take_command().lower()
-        if response == "exit":
-            speak("Exiting game.")
-            break
-        elif response != "start":
-            speak("Invalid response. Please say 'continue' or 'exit'.")
-            continue
-
-        used = []
-        totaltime = 0
-        for count in range(0, 100):
-            used.append(count)
-        count = 0
-        # repeats 3 times so 3 events happen every game
-        while count < 3:
-            count += 1
-            choice = random.randint(0, 99)
-            # if number has already been generated then it will not run it and will change
-            # that value to 101 which is my value for its not a valid choice
-            if used[choice] != 101:
-                used[choice] = 101
-                userpl = True
-                # random Choice for selecting the path
-                if choice == 1:
-                    timetaken = Money()
-                elif choice == 2:
-                    timetaken = river()
-                elif choice == 3:
-                    timetaken = Kitten()
-                elif choice == 4:
-                    timetaken = prisoner()
-                elif choice == 5:
-                    timetaken = dinosaur()
-                elif choice == 6:
-                    timetaken = lost_child()
-                elif choice == 7:
-                    timetaken = AppleStore()
-                elif choice == 8:
-                    timetaken = kidnapping()
-                else:
-                    userpl = False
-                    count -= 1
-                # when an event is run then the user must hit enter to continue
-                if userpl:
-                    strlabel.config(text="Say continue to proceed")
-                    strlabel.update()
-                    speak("Say continue to proceed")
-                    a = take_command().lower()
-                    user_label1.update()
-                    if a == "exit":
-                        speak("Exiting game.")
-                        return
-
-            else:
-                # will not count that as one of the 3 options
-                used[choice] = 101
-                timetaken = 0
-                count -= 1
-            # sets the user played value to true which only gets changed
-            # when the user has a go
-            userpl = True
-            totaltime = totaltime + timetaken
-        if (totaltime) <= 0:
-            strlabel.config(text="You've finally made it to the university without being Late \n YOU WIN!!!!")
-            strlabel.update()
-            speak("You've finally made it to the university without being Late........... YOU WIN!!!!")
-        else:
-            strlabel.config(
-                text="You've finally made it to the university, and you were only {0} minutes late!".format(totaltime))
-            strlabel.update()
-            speak("You've finally made it to university, and you were {0} minutes late!".format(totaltime))
-
-
-def stop_function():
-    global running
-    running = False
-    strlabel.config(text=" ")
-    user_label1.config(text=" ")
-    show_frame(MainPage)
-    return
-
-
-
-def vinput():
-    # validates inputs so it can't crash and the choice can only be a, b, or c
-    valid_inputs = ["number one", "number 2", "number 3"]
-
-    while True:
-        inp = take_command().lower()
-        if inp in valid_inputs:
-            break
-        else:
-            speak("That's not a valid input")
-
-    return inp
-
-
-def Money():
-    global timetaken
-    strlabel.config(text="You're on your way to university when you stumble upon a lost wallet on the ground.")
-    strlabel.update()
-    speak("You're on your way to university when you stumble upon a lost wallet on the ground.")
-    strlabel.config(text="You pick it up and see that it contains a large sum of money and an ID card.")
-    strlabel.update()
-    speak("You pick it up and see that it contains a large sum of money and an ID card.")
-    strlabel.config(text="What do you do with the wallet and its contents?")
-    strlabel.update()
-    speak("What do you do with the wallet and its contents?")
-    strlabel.config(text="Number 1: Take the money and ditch the wallet.")
-    strlabel.update()
-    speak("Number 1: Take the money and ditch the wallet.")
-    strlabel.config(text="Number 2: Try to locate the owner using the ID card.")
-    strlabel.update()
-    speak("Number 2: Try to locate the owner using the ID card.")
-    strlabel.config(text="Number 3: Take the wallet and money to the police station.")
-    strlabel.update()
-    speak("Number 3: Take the wallet and money to the police station.")
-
-    inp = vinput()
-    user_label1.config(text=inp)
-    user_label1.update()
-    if inp == "number one":
-        strlabel.config(text="You've just committed theft. Shame on you!")
-        strlabel.update()
-        speak("You've just committed theft. Shame on you!")
-        timetaken = 0
-    elif inp == "number 2":
-        strlabel.config(text="You manage to contact the owner and return the wallet with all the money intact.")
-        strlabel.update()
-        speak("You manage to contact the owner and return the wallet with all the money intact.")
-        strlabel.config(text="They're extremely grateful and offer to buy you lunch as a thank you.")
-        strlabel.update()
-        speak("They're extremely grateful and offer to buy you lunch as a thank you.")
-        timetaken = 10
-    elif inp == "number 3":
-        strlabel.config(text="You take the wallet to the police station and they're able to locate the owner.")
-        strlabel.update()
-        speak("You take the wallet to the police station and they're able to locate the owner.")
-        strlabel.config(text="They thank you for your honesty and give you a certificate of recognition.")
-        strlabel.update()
-        speak("They thank you for your honesty and give you a certificate of recognition.")
-        timetaken = 15
-    return timetaken
-
-
-def river():
-    global timetaken
-    strlabel.config(text="You come across a wide river blocking your path.")
-    strlabel.update()
-    speak("You come across a wide river blocking your path.")
-    strlabel.config(text="What will you do?")
-    strlabel.update()
-    speak("What will you do?")
-    strlabel.config(text="Number 1: Try to swim across.")
-    strlabel.update()
-    speak("Number 1: Try to swim across.")
-    strlabel.config(text="Number 2: Steal the boat in front of you.")
-    strlabel.update()
-    speak("Number 2: Steal the boat in front of you")
-    strlabel.config(text="Number 3: Search for a bridge or a boat to cross.")
-    strlabel.update()
-    speak("Number 3: Search for a bridge or a boat to cross.")
-
-    inp = vinput()
-    user_label1.config(text=inp)
-    user_label1.update()
-    if inp == "number one":
-        strlabel.config(text="You attempt to swim across, but the current is too strong and you are swept downstream.")
-        strlabel.update()
-        speak("You attempt to swim across, but the current is too strong and you are swept downstream.")
-        #
-        timetaken = 25
-    elif inp == "number two":
-        strlabel.config(
-            text="You Managed to steal the boat and cross the river in time \n but the police will be looking for you! ")
-        strlabel.update()
-        speak("You Managed to steal the boat and cross the river in time but the police will be looking for you!")
-        #
-        timetaken = 0
-    elif inp == "number three":
-        strlabel.config(text="You spend some time searching and eventually find a small boat to cross the river.")
-        strlabel.update()
-        speak("You spend some time searching and eventually find a small boat to cross the river.")
-        #
-        timetaken = 20
-    return timetaken
-
-
-def AppleStore():
-    global timetaken, timetaken
-    strlabel.config(text="As you approach the AppleStore, you hear loud noises and see a commotion.")
-    strlabel.update()
-    speak("As you approach the AppleStore, you hear loud noises and see a commotion.")
-    strlabel.config(text="You notice people breaking into the store and taking iPads, iPhones, and Mac-books.")
-    strlabel.update()
-    speak("You notice people breaking into the store and taking iPads, iPhones, and Mac-books.")
-    strlabel.config(text="What do you do?")
-    strlabel.update()
-    speak("What do you do?")
-    strlabel.config(text="Number 1: Call the police.")
-    strlabel.update()
-    speak("Number 1: Call the police.")
-    strlabel.config(text="Number 2: Try to stop the looters and protect the store.")
-    strlabel.update()
-    speak("Number 2:Try to stop the looters and protect the store.")
-    strlabel.config(text="Number 3: Walk away and continue on your way to work")
-    strlabel.update()
-    speak("Number 3: Walk away and continue on your way to work.")
-
-    inp = vinput()
-    user_label1.config(text=inp)
-    if inp == "number one":
-        strlabel.config(text="You quickly dial 911 and report the situation.")
-        strlabel.update()
-        speak("You quickly dial 911 and report the situation.")
-        strlabel.config(text="The police arrive and handle the situation, but you're slightly delayed.")
-        strlabel.update()
-        speak("The police arrive and handle the situation, but you're slightly delayed.")
-        timetaken = 5
-    elif inp == "number 2":
-        strlabel.config(text="You try to stop the looters and protect the store, but it's too dangerous.")
-        strlabel.update()
-        speak("You try to stop the looters and protect the store, but it's too dangerous.")
-        strlabel.config(text="You get caught up in the chaos and barely escape with your life.")
-        strlabel.update()
-        speak("You get caught up in the chaos and barely escape with your life.")
-        strlabel.config(text="You're late for work and have to explain what happened to your boss.")
-        strlabel.update()
-        speak("You're late for work and have to explain what happened to your boss.")
-        timetaken = 25
-    elif inp == "number 3":
-        strlabel.config(text="You decide to play it safe and walk away from the situation.")
-        strlabel.update()
-        speak("You decide to play it safe and walk away from the situation.")
-        strlabel.config(text="You make it to work on time and avoid any trouble.")
-        strlabel.update()
-        speak("You make it to work on time and avoid any trouble.")
-        timetaken = 0
-    return timetaken
-
-
-def lost_child():
-    global timetaken
-    strlabel.config(text="You are walking in the park when you notice a lost child crying")
-    strlabel.update()
-    speak("You are walking in the park when you notice a lost child crying")
-    strlabel.config(text="What do you do?")
-    strlabel.update()
-    speak("What do you do?")
-    strlabel.config(text="Number 1: Look around for the child's parents and try to reunite them")
-    strlabel.update()
-    speak("Number 1: Look around for the child's parents and try to reunite them")
-    strlabel.config(text="Number 2: Stay with the child until the police arrive")
-    strlabel.update()
-    speak("Number 2: Stay with the child until the police arrive")
-    strlabel.config(text="Number 3: Ignore the child and continue on your way")
-    strlabel.update()
-    speak("Number 3: Ignore the child and continue on your way")
-    inp = vinput()
-    user_label1.config(text=inp)
-    user_label1.update()
-    if inp == "number one":
-        strlabel.config(text="Good job! You helped reunite the lost child with their parents")
-        strlabel.update()
-        speak("Good job! You helped reunite the lost child with their parents")
-        timetaken = 10
-    elif inp == "number 2":
-        strlabel.config(text="You stayed with the child until the police arrived, and they thanked you for your help")
-        strlabel.update()
-        speak("You stayed with the child until the police arrived, and they thanked you for your help")
-        timetaken = 20
-    elif inp == "number 3":
-        strlabel.config(text="Shame on you! You should always help someone in need")
-        strlabel.update()
-        speak("Shame on you! You should always help someone in need")
-        timetaken = 0
-    return timetaken
-
-
-def kidnapping():
-    strlabel.config(text="You're walking to university when you suddenly hear footsteps behind you")
-    strlabel.update()
-    speak("You're walking to university when you suddenly hear footsteps behind you.")
-    strlabel.config(text="As you turn around, a group of strangers grab you and put a bag over your head.")
-    strlabel.update()
-    speak("As you turn around, a group of strangers grab you and put a bag over your head.")
-    strlabel.config(text="You can hear them driving for what seems like hours until they finally stop.")
-    strlabel.update()
-    speak("You can hear them driving for what seems like hours until they finally stop.")
-    strlabel.config(text="They pull you out of the car and throw you into a room.")
-    strlabel.update()
-    speak("They pull you out of the car and throw you into a room.")
-    strlabel.config(text="You have no idea where you are or why this is happening.")
-    strlabel.update()
-    speak("You have no idea where you are or why this is happening.")
-    strlabel.config(text="So, what do you think happened?")
-    strlabel.update()
-    speak("So, what do you think happened?")
-    strlabel.config(text="Number 1: You got kidnapped.")
-    strlabel.update()
-    speak("Number 1: You got kidnapped.")
-    strlabel.config(text="Number 2: You got kidnapped.")
-    strlabel.update()
-    speak("Number 2: You got kidnapped.")
-    strlabel.config(text="Number 3: You got kidnapped.")
-    strlabel.update()
-    speak("Number 3: You got kidnapped.")
-    inp = vinput()
-    user_label1.config(text=inp)
-    user_label1.update()
-    strlabel.config(text="Wow! Now wasn't that hard to figure out!")
-    strlabel.update()
-    speak("Wow! Now wasn't that hard to figure out!")
-    strlabel.config(text="Looks like you have nothing to do about it, too...")
-    strlabel.update()
-    speak("Looks like you have nothing to do about it, too...")
-    strlabel.config(text="You spend the next few days in that room, trying to find a way out.")
-    strlabel.update()
-    speak("You spend the next few days in that room, trying to find a way out.")
-    strlabel.config(text="Finally, you hear someone opening the door.")
-    strlabel.update()
-    speak("Finally, you hear someone opening the door.")
-    strlabel.config(text="It's the police! They found you just in time.")
-    strlabel.update()
-    speak("It's the police! They found you just in time.")
-    strlabel.config(text="You're safe now, but shaken up.")
-    strlabel.update()
-    speak("You're safe now, but shaken up.")
-    strlabel.config(text="Let's keep going!... Better late than never...i guess")
-    strlabel.update()
-    speak("Let's keep going!... Better late than never...i guess")
-    timetaken = 4320
-    return timetaken
-
-
-def Kitten():
-    global timetaken
-    strlabel.config(text="As you walk, you hear a soft meowing sound coming from behind a nearby tree.")
-    strlabel.update()
-    speak("As you walk, you hear a soft meowing sound coming from behind a nearby tree.")
-    strlabel.config(text="Upon closer inspection, you find a small, lost kitten.")
-    strlabel.update()
-    speak("Upon closer inspection, you find a small, lost kitten.")
-    strlabel.config(text="What would you like to do with the kitten?")
-    strlabel.update()
-    speak("What would you like to do with the kitten?")
-    strlabel.config(text="Number 1: Take the kitten with you and try to find its owner.")
-    strlabel.update()
-    speak("Number 1: Take the kitten with you and try to find its owner.")
-    strlabel.config(text="Number 2: Leave the kitten there and continue on your way to university.")
-    strlabel.update()
-    speak("Number 2: Leave the kitten there and continue on your way to university.")
-    strlabel.config(text="Number 3: Take the kitten with you and try to find it a new home.")
-    strlabel.update()
-    speak("Number 3: Take the kitten with you and try to find it a new home.")
-    inp = vinput()
-    user_label1.config(text=inp)
-    user_label1.update()
-    if inp == "number one":
-        strlabel.config(text="You're doing the right thing! The kitten's owner will be grateful.")
-        strlabel.update()
-        speak("You're doing the right thing! The kitten's owner will be grateful.")
-        timetaken = 5
-    elif inp == "number 2":
-        strlabel.config(text="It's unfortunate, but you have to get to university.")
-        strlabel.update()
-        speak("It's unfortunate, but you have to get to university.")
-        timetaken = 0
-    elif inp == "number 3":
-        strlabel.config(text="You have a big heart, helping the kitten find a new home.")
-        strlabel.update()
-        speak("You have a big heart, helping the kitten find a new home.")
-        timetaken = 15
-        strlabel.config(text="Good luck with your day at university!")
-        strlabel.update()
-        speak("Good luck with your day at university!")
-    return timetaken
-
-
-def prisoner():
-    global timetaken
-    strlabel.config(text="As you walk down the street, you notice a group of people walking towards you.")
-    strlabel.update()
-    speak("As you walk down the street, you notice a group of people walking towards you.")
-    strlabel.config(text="As they get closer, you realize they are three individuals who look a bit rough.")
-    strlabel.update()
-    speak("As they get closer, you realize they are three individuals who look a bit rough.")
-    strlabel.config(text="They approach you and demand your belongings.")
-    strlabel.update()
-    speak("They approach you and demand your belongings.")
-    strlabel.config(text="What do you do?")
-    strlabel.update()
-    speak("What do you do?")
-    strlabel.config(text="Number 1: Try to de-escalate the situation and talk to them calmly.")
-    strlabel.update()
-    speak("Number 1: Try to de-escalate the situation and talk to them calmly.")
-    strlabel.config(text="Number 2: Hand over your belongings and hope they don't harm you.")
-    strlabel.update()
-    speak("Number 2: Hand over your belongings and hope they don't harm you.")
-    strlabel.config(text="Number 3: Make a run for it and call the police")
-    strlabel.update()
-    speak("Number 3: Make a run for it and call the police.")
-
-    inp = vinput()
-    user_label1.config(text=inp)
-    user_label1.update()
-    if inp == "number one":
-        strlabel.config(text="You were able to calm them down and they let you go.")
-        strlabel.update()
-        speak("You were able to calm them down and they let you go.")
-        #
-        timetaken = 5
-    elif inp == "number 2":
-        strlabel.config(text="You gave them your belongings, but they didn't harm you.")
-        strlabel.update()
-        speak("You gave them your belongings, but they didn't harm you.")
-        #
-        timetaken = 7
-    elif inp == "number 3":
-        strlabel.config(text="You managed to escape and called the police.")
-        strlabel.update()
-        speak("You managed to escape and called the police.")
-        #
-        timetaken = 0
-    return timetaken
-
-
-def dinosaur():
-    timetaken = 0
-    strlabel.config(
-        text="You are on your way and come across a drugged grizzly bear \n which escaped from the local zoo.")
-    strlabel.update()
-    speak("You are on your way and come across a drugged grizzly bear which escaped from the local zoo.")
-    strlabel.config(text="It stands on its hind legs and growls at you menacingly.")
-    strlabel.update()
-    speak("It stands on its hind legs and growls at you menacingly.")
-    strlabel.config(text="Quick! What do you want to do?")
-    strlabel.update()
-    speak("Quick! What do you want to do?")
-    strlabel.config(text="Number 1: Slowly back away and try to retreat.")
-    strlabel.update()
-    speak("Number 1: Slowly back away and try to retreat.")
-    strlabel.config(text="Number 2: Make yourself look bigger and yell to scare it off.")
-    strlabel.update()
-    speak("Number 2: Make yourself look bigger and yell to scare it off.")
-    strlabel.config(text="Number 3: Play dead and hope the bear loses interest.")
-    strlabel.update()
-    speak("Number 3: Play dead and hope the bear loses interest.")
-    inp = vinput()
-    user_label1.config(text=inp)
-    user_label1.update()
-    if inp == "number one":
-        strlabel.config(text="Good choice. Slowly back away and avoid eye contact.")
-        strlabel.update()
-        speak("Good choice. Slowly back away and avoid eye contact.")
-        strlabel.config(text="The bear loses interest and goes back to foraging.")
-        strlabel.update()
-        speak("The bear loses interest and goes back to foraging.")
-        timetaken = 2
-    elif inp == "number two":
-        strlabel.config(text="You try to make yourself look bigger and yell loudly.")
-        strlabel.update()
-        speak("You try to make yourself look bigger and yell loudly.")
-        strlabel.config(text="The bear seems startled and charges at you.")
-        strlabel.update()
-        speak("The bear seems startled and charges at you.")
-        strlabel.config(text="You quickly move out of the way and it runs off.")
-        strlabel.update()
-        speak("You quickly move out of the way and it runs off.")
-        timetaken = 0
-    elif inp == "number three":
-        strlabel.config(text="Playing dead might work, but it's risky.")
-        strlabel.update()
-        speak("Playing dead might work, but it's risky.")
-        strlabel.config(text="The bear sniffs around you and nudges you with its nose.")
-        strlabel.update()
-        speak("The bear sniffs around you and nudges you with its nose.")
-        strlabel.config(text="You hold your breath and stay still until it leaves.")
-        strlabel.update()
-        speak("You hold your breath and stay still until it leaves.")
-        timetaken = 15
-        strlabel.config(text="You survived the encounter!")
-        strlabel.update()
-    speak("You survived the encounter!")
-    return timetaken
 
 
 ######################################## USED STUFFS ############################################
@@ -1402,22 +884,15 @@ def update_time():
     MainPage.after(1000, update_time)
 
 
-def GamePage1():
-    show_frame(GamePage)
-    response = " Game Page Selected "
-    t = threading.Thread(target=speak1, args=(response,))
-    t.start()
-    strlabel.config(text="Press Start Game Button ")
-    user_label1.config(text="")
-
-
 def ComputervisionPage1():
+    global camera_initialized
+    if not camera_initialized:
+        Camera()
+
     response = " Computer Vision Page Selected "
     t = threading.Thread(target=speak1, args=(response,))
     t.start()
     show_frame(ComputerVisionPage)
-    t1 = threading.Thread(target=Camera)
-    t1.start()
 
 
 def AssistantPage1():
@@ -1442,10 +917,16 @@ def Back_btn1():
     response = " Back Button Selected "
     t = threading.Thread(target=speak1, args=(response,))
     t.start()
-    stop_function()
     update_time()
     tick()
 
+def Back_btn2():
+    show_frame(ComputerVisionPage)
+    response = " Back Button Selected "
+    t = threading.Thread(target=speak1, args=(response,))
+    t.start()
+    update_time()
+    tick()
 
 ################################ USER INTERFACE DESIGN ##################################
 
@@ -1456,13 +937,11 @@ window.title("Envision AI")
 window.rowconfigure(0, weight=1)
 window.tk.call('wm', 'iconphoto', window._w, tk.PhotoImage(file='icon.png'))
 
-filename1 = ImageTk.PhotoImage(Image.open('Background-Frame-CV.jpg'))
+filename1 = ImageTk.PhotoImage(Image.open('images\\Background-Frame-CV.jpg'))
 
-filename2 = ImageTk.PhotoImage(Image.open('Background-Frame-Ai.jpg'))
+filename2 = ImageTk.PhotoImage(Image.open('images\\Background-Frame-Ai.jpg'))
 
-filename3 = ImageTk.PhotoImage(Image.open('Background-Frame-GG.jpg'))
-
-filename = ImageTk.PhotoImage(Image.open('Background.jpg'))
+filename = ImageTk.PhotoImage(Image.open('images\\Background.jpg'))
 
 ########################################################--------MAIN MENU PAGE############################################################################
 
@@ -1485,15 +964,8 @@ button2 = Button(MainPage, text="A I  A s s i s t a n t", font=('Quantum Mechani
 button2.bind("<Enter>", increase_size)
 button2.bind("<Leave>", decrease_size)
 button2.pack()
-button2.place(x=315, y=490)
+button2.place(x=400, y=490)
 
-button3 = Button(MainPage, text="G a m e", font=('Quantum Mechanics', 12),
-                 command=lambda: GamePage1(), bg="white", fg="black",
-                 width=17, height=1, borderwidth=0)
-button3.bind("<Enter>", increase_size)
-button3.bind("<Leave>", decrease_size)
-button3.pack()
-button3.place(x=600, y=490)
 
 button4 = Button(MainPage, text=" Q u i t ", font=('Quantum Mechanics', 11, 'bold'), command=lambda: confirm2(),
                  bg="#211c44", fg="#fff", width=10, height=0, borderwidth=0)
@@ -1530,48 +1002,22 @@ StartCV = tk.Button(CVFrame, text="➔ Start Computer Vision", command=lambda: c
                     width=24, height=1, activebackground="white", font=('Century Gothic', 15))
 StartCV.place(x=15, y=90)
 
+StartFace = tk.Button(CVFrame, text="➔ Face Recognition", command=lambda: [show_frame(SavedPersonsFrame),thumbnail_treeview.update_list(), load_known_faces1()], fg="white",
+                    bg="#004aad",
+                    width=24, height=1, activebackground="white", font=('Century Gothic', 15))
+StartFace.place(x=15, y=150)
+
 clock_label = tk.Label(ComputerVisionPage, fg="white", bg="#004aad", height=1, font=('Century Gothic', 25))
 clock_label.pack()
 clock_label.place(x=1000, y=80)
 
 update_time()
-def on_hover(event):
-    # Create a popup menu with two options
-    popup_menu = tk.Menu(ComputerVisionPage, tearoff=0)
-    popup_menu.configure(bg="#004aad", fg="white", font=('Century Gothic', 15))
-    popup_menu.add_command(label="Add new face Via Webcam", command=add_new_face )
-    popup_menu.add_command(label="Add new face Via File", command=add_new_face_from_image)
 
-    # Display the popup menu
-    try:
-        popup_menu.tk_popup(event.x_root, event.y_root)
-    finally:
-        popup_menu.bind("<Leave>", lambda _: popup_menu.unpost())
-
-
-AddFace = tk.Button(CVFrame, text="➔ Add Face", fg="white", bg="#004aad",command=None,
-                    width=24, height=1, activebackground="white", font=('Century Gothic', 15))
-AddFace.place(x=15, y=150)
-AddFace.bind("<Enter>", on_hover)
-
-DeleteFace = tk.Button(CVFrame, text="➔ Delete Face", command=lambda: delete_face(simpledialog.askstring("Input", "Enter the name of the person to delete:",
-                                   parent=ComputerVisionPage)), fg="white", bg="#004aad",
-                    width=24, height=1, activebackground="white", font=('Century Gothic', 15))
-DeleteFace.place(x=15, y=270)
-
-UpdateFace = tk.Button(CVFrame, text="➔ Update Known Face", command=update_known_face_button, fg="white", bg="#004aad",
-                       width=24, height=1, activebackground="white", font=('Century Gothic', 15))
-UpdateFace.place(x=15, y=210)
-
-delete_all_known_faces_button = tk.Button(
-    ComputerVisionPage, text="➔ Delete All Known Faces", command=lambda: delete_all_known_faces("known_faces.pkl"),
-    fg="white", bg="black", width=24, height=1, activebackground="white", font=('Century Gothic', 15)
-)
-delete_all_known_faces_button.place(x=15, y=680)
 
 back = tk.Button(ComputerVisionPage, text="Back", command=lambda: Back_btn(), fg="white", bg="#404040",
                  width=20, height=1, activebackground="white", font=('Century Gothic', 15))
 back.place(x=320, y=680)
+
 
 ###############################------------------AI Assistance PAGE--------------------###################################################
 AssistantPage = tk.Frame(window, width=1366, height=768)
@@ -1579,7 +1025,7 @@ AssistantPage.grid(row=0, column=0, stick='nsew')
 background_label = tk.Label(AssistantPage, image=filename2)
 background_label.place(x=0, y=0, relwidth=1, relheight=1)
 
-image = Image.open("Background-Frame-Ai.jpg")
+image = Image.open("images\\Background-Frame-Ai.jpg")
 image = image.filter(ImageFilter.GaussianBlur(radius=10))
 
 AssistantFrame = tk.Frame(AssistantPage, bg="White", borderwidth=1)
@@ -1618,51 +1064,193 @@ clock.pack()
 clock.place(x=1000, y=80)
 
 tick()
-################################################ Game PAGE ########################################################################
+###############################------------------Saved Personell PAGE--------------------###################################################
 
-GamePage = tk.Frame(window, width=1366, height=768)
-GamePage.grid(row=0, column=0, stick='nsew')
+# New frame to show all saved persons
+SavedPersonsFrame = tk.Frame(window, width=1366, height=768)
+SavedPersonsFrame.grid(row=0, column=0, sticky='nsew')
 
-background_label = tk.Label(GamePage, image=filename3)
-background_label.place(x=0, y=0, relwidth=1, relheight=1)
+# Background label
+background_label2 = tk.Label(SavedPersonsFrame, image=filename2)
+background_label2.place(x=0, y=0, relwidth=1, relheight=1)
 
-gameframe = tk.Frame(GamePage, bg="white")
-gameframe.place(relx=0.20, rely=0.2, relwidth=0.60, relheight=0.68)
+pplFrame = tk.Frame(SavedPersonsFrame, bg="white")
+pplFrame.place(relx=0.2, rely=0.32, relwidth=0.25, relheight=0.50)
 
-user_Name = Label(GamePage, text="User: ", font=('Century Gothic', 14), bg='white', height=2)
-user_Name.pack()
-user_Name.place(x=270, y=555)
+head3 = tk.Label(pplFrame, text="               Control Panel                         ", fg="White", bg="#424949",
+                 font=('Century Gothic', 17), height=1)
+head3.place(x=0, y=0)
 
-user_label1 = Label(gameframe, text="", font=('Century Gothic', 14), fg='black', height=2, width=65, wraplength=500,
-                    anchor="w", padx=20)
-user_label1.pack()
-user_label1.place(x=50, y=400)
 
-strlabel = Label(gameframe, text="Press Start Game Button", font=('Century Gothic', 14), fg='Black',
-                 bg='white', height=10, width=100, wraplength=500, anchor="w")
-strlabel.pack()
-strlabel.place(x=200, y=50)
+class ThumbnailTreeView(ttk.Treeview):
+    def __init__(self, master=None, **kwargs):
+        super().__init__(master, **kwargs)
+        self["columns"] = ("S.N.", "People")
+        self.column("#0", width=0, stretch=tk.NO)
+        self.column("S.N.", width=50, anchor=tk.CENTER)
+        self.column("People", width=200, anchor=tk.CENTER)
 
-Computer_label = Label(GamePage, text="Envision:", font=('Century Gothic', 14), fg='Black', bg='white',
-                       height=2)
-Computer_label.pack()
-Computer_label.place(x=270, y=295)
+        self.heading("S.N.", text="S.N.")
+        self.heading("People", text="People")
+        self.image_list = []
+        self.bind("<Double-1>", self.on_double_click)
 
-StartGame = tk.Button(GamePage, text="➔ Start Game", command=lambda: Game1(), fg="white",
-                      bg="#1c1430", width=20, height=1, activebackground="white", font=('Century Gothic', 15),
-                      borderwidth=0)
-StartGame.place(x=200, y=700)
+    def add_item(self, sn, name, image_path):
+        thumbnail_image = self.create_thumbnail(image_path)
+        self.image_list.append(thumbnail_image)
+        self.insert(parent="", index=tk.END, iid=None, text="", values=(sn, name, ""), image=thumbnail_image)
 
-clock = tk.Label(GamePage, fg="white", bg="#004aad", height=1, font=('Century Gothic', 25))
-clock.pack()
-clock.place(x=1000, y=80)
-tick()
+    def create_thumbnail(self, image_path, size=(100, 100)):
+        image = Image.open(image_path)
+        image.thumbnail(size)
+        thumbnail_image = ImageTk.PhotoImage(image)
+        return thumbnail_image
 
-back = tk.Button(GamePage, text="Back", command=lambda: Back_btn1(), fg="white", bg="#404040", width=20,
-                 height=1, activebackground="white", font=('Century Gothic', 15), borderwidth=0)
-back.place(x=950, y=700)
+    def get_selected_name(self):
+        selected_item = self.selection()[0]
+        selected_name = self.item(selected_item)["values"][1]
+        return selected_name
+
+    def get_selected_image_path(self):
+        selected_item = self.selection()[0]
+        selected_name = self.item(selected_item)["values"][1]
+        image_path = selected_name + ".jpg"
+        return image_path
+
+    def on_double_click(self, event):
+        item = self.identify("item", event.x, event.y)
+        if item:
+            self.selection_set(item)
+            self.open_image()
+
+    def open_image(self):
+        image_path = self.get_selected_image_path()
+        if platform.system() == "Windows":
+            os.startfile(image_path)
+        elif platform.system() == "Linux":
+            subprocess.call(["xdg-open", image_path])
+        elif platform.system() == "Darwin":  # macOS
+            subprocess.call(["open", image_path])
+
+    def update_list(self):
+        for i in self.get_children():
+            self.delete(i)
+        image_paths = glob.glob("*.jpg")  # Assumes saved images are in the current directory
+        for index, image_path in enumerate(image_paths, start=1):
+            name = os.path.splitext(os.path.basename(image_path))[0]
+            thumbnail_image = self.create_thumbnail(image_path)
+            self.image_list.append(thumbnail_image)
+            self.insert("", tk.END, values=(index, name, ""), image=thumbnail_image)
+
+thumbnail_treeview = ThumbnailTreeView(SavedPersonsFrame)
+thumbnail_treeview.place(relx=0.5, rely=0.23, relwidth=0.45, relheight=0.7)
+
+image_paths = glob.glob("*.jpg")  # Assumes saved images are in the current directory
+for i, image_path in enumerate(image_paths):
+    name = os.path.splitext(os.path.basename(image_path))[0]
+    thumbnail_treeview.add_item(i + 1, name, image_path)
+
+def on_hover(event):
+    # Create a popup menu with two options
+    popup_menu = tk.Menu(SavedPersonsFrame, tearoff=0)
+    popup_menu.configure( font=('Century Gothic', 15), fg="white", bg="#404040")
+    popup_menu.add_command(label="Add new face Via Webcam", command=lambda:create_input_window1() )
+    popup_menu.add_command(label="Add new face Via File", command=lambda:create_input_window2() )
+
+    # Display the popup menu
+    try:
+        popup_menu.tk_popup(event.x_root, event.y_root)
+    finally:
+        popup_menu.bind("<Leave>", lambda _: popup_menu.unpost())
+
+AddFace = tk.Button(pplFrame, text="➔ Add Face", font=('Century Gothic', 15), fg="white", bg="#404040", width=20, height=1)
+AddFace.bind("<Enter>", on_hover)
+AddFace.place(x=50, y=80)
+
+
+
+def create_input_window1():
+    input_window = tk.Toplevel()
+    input_window.title("Delete Face")
+    input_window.configure(bg='light blue')
+    input_window.geometry("400x160")
+    # Get the screen width and height
+    screen_width = input_window.winfo_screenwidth()
+    screen_height = input_window.winfo_screenheight()
+
+    # Calculate the x and y coordinates to center the window
+    x = (screen_width - input_window.winfo_reqwidth()) // 2
+    y = (screen_height - input_window.winfo_reqheight()) // 2
+
+    # Set the window position
+    input_window.geometry("+{}+{}".format(x, y))
+
+    name_label = tk.Label(input_window, text="Enter the name of the person to Add:", bg='light blue',font=('Century Gothic', 13 ))
+    name_label.place(x=30,y=10)
+
+    name_entry = tk.Entry(input_window,width=25 ,fg="black",relief='solid',font=('Century Gothic', 13))
+    name_entry.place(x=70, y=70)
+
+    def submit():
+        name = name_entry.get()
+        add_new_face(name)
+        input_window.destroy()
+
+    submit_button = tk.Button(input_window, text="Submit", command=submit, fg="White"  ,bg="#111211" ,height=1,width=20 , activebackground = "white" ,font=('Century Gothic', 10))
+    submit_button.place(x=205, y=120)
+
+    cancel_button = tk.Button(input_window, text="Cancel", command=input_window.destroy, fg="White", bg="#614f41", height = 1,width=20, activebackground="white", font=('Century Gothic', 10))
+    cancel_button.place(x=20, y=120)
+    thumbnail_treeview.update_list()
+    load_known_faces1()
+
+def create_input_window2():
+    input_window = tk.Toplevel()
+    input_window.title("Delete Face")
+    input_window.configure(bg='light blue')
+    input_window.geometry("400x160")
+    # Get the screen width and height
+    screen_width = input_window.winfo_screenwidth()
+    screen_height = input_window.winfo_screenheight()
+
+    # Calculate the x and y coordinates to center the window
+    x = (screen_width - input_window.winfo_reqwidth()) // 2
+    y = (screen_height - input_window.winfo_reqheight()) // 2
+
+    # Set the window position
+    input_window.geometry("+{}+{}".format(x, y))
+
+    name_label = tk.Label(input_window, text="Enter the name of the person to Add:", bg='light blue',font=('Century Gothic', 13 ))
+    name_label.place(x=30,y=10)
+
+    name_entry = tk.Entry(input_window,width=25 ,fg="black",relief='solid',font=('Century Gothic', 13))
+    name_entry.place(x=70, y=70)
+
+    def submit():
+        name = name_entry.get()
+        add_new_face_from_image(name)
+        input_window.destroy()
+
+    submit_button = tk.Button(input_window, text="Submit", command=submit, fg="White"  ,bg="#111211" ,height=1,width=20 , activebackground = "white" ,font=('Century Gothic', 10))
+    submit_button.place(x=205, y=120)
+
+    cancel_button = tk.Button(input_window, text="Cancel", command=input_window.destroy, fg="White", bg="#614f41", height = 1,width=20, activebackground="white", font=('Century Gothic', 10))
+    cancel_button.place(x=20, y=120)
+    thumbnail_treeview.update_list()
+    load_known_faces1()
+
+update_button = tk.Button(pplFrame, text="Update", command=lambda :[update_known_face_button(thumbnail_treeview.get_selected_name()), thumbnail_treeview.update_list(), load_known_faces1()], font=('Century Gothic', 15), fg="white", bg="#404040", width=20, height=1)
+update_button.place(x=50, y=160)
+
+delete_button = tk.Button(pplFrame, text="Delete", command=lambda: [delete_face(thumbnail_treeview.get_selected_name()), thumbnail_treeview.update_list(), load_known_faces1()], font=('Century Gothic', 15), fg="white", bg="#404040", width=20, height=1)
+delete_button.place(x=50, y=230)
+
+# Back button
+back2 = tk.Button(SavedPersonsFrame, text="Back", command=lambda:Back_btn2(), font=('Century Gothic', 15), fg="white", bg="#404040", width=20, height=1)
+back2.place(relx=0.1, rely=0.9)
+
 
 ########################################################################################################################
-show_frame(MainPage)
+show_frame(ComputerVisionPage)
 
 window.mainloop()
